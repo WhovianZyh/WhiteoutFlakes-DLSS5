@@ -1200,7 +1200,34 @@ cbuffer PnParams : register(b1) { float g_tessFactor; float g_crease; float2 _pa
 struct DS_IN { float4 pos : SV_Position; float3 nrm : NORMAL; float2 uv : TEXCOORD0; float4 col : COLOR0; };
 struct DS_OUT { float4 pos : SV_Position; float3 nrm : NORMAL; float2 uv : TEXCOORD0; float4 col : COLOR0; };
 struct HS_CONST { float edges[3] : SV_TessFactor; float inside : SV_InsideTessFactor; };
-[domain("tri")] DS_OUT DS(HS_CONST hsc, float3 bary : SV_DomainLocation, const OutputPatch<DS_IN,3> patch) { DS_OUT o; o.pos = patch[0].pos*bary.z + patch[1].pos*bary.x + patch[2].pos*bary.y; o.nrm = normalize(patch[0].nrm*bary.z + patch[1].nrm*bary.x + patch[2].nrm*bary.y); o.uv = patch[0].uv*bary.z + patch[1].uv*bary.x + patch[2].uv*bary.y; o.col = patch[0].col*bary.z + patch[1].col*bary.x + patch[2].col*bary.y; return o; }
+[domain("tri")] DS_OUT DS(HS_CONST hsc, float3 bary : SV_DomainLocation, const OutputPatch<DS_IN,3> patch) {
+    float u = bary.x, v = bary.y, w = bary.z;
+    float3 p0 = patch[0].pos.xyz, p1 = patch[1].pos.xyz, p2 = patch[2].pos.xyz;
+    float3 n0 = normalize(patch[0].nrm), n1 = normalize(patch[1].nrm), n2 = normalize(patch[2].nrm);
+    float3 b300 = p0, b030 = p1, b003 = p2;
+    float w12 = dot(p1 - p0, n0); float3 b210 = (2.0 * p0 + p1 - w12 * n0) / 3.0;
+    float w21 = dot(p0 - p1, n1); float3 b120 = (2.0 * p1 + p0 - w21 * n1) / 3.0;
+    float w23 = dot(p2 - p1, n1); float3 b021 = (2.0 * p1 + p2 - w23 * n1) / 3.0;
+    float w32 = dot(p1 - p2, n2); float3 b012 = (2.0 * p2 + p1 - w32 * n2) / 3.0;
+    float w31 = dot(p0 - p2, n2); float3 b102 = (2.0 * p2 + p0 - w31 * n2) / 3.0;
+    float w13 = dot(p2 - p0, n0); float3 b201 = (2.0 * p0 + p2 - w13 * n0) / 3.0;
+    float3 e = (b210 + b120 + b021 + b012 + b102 + b201) / 6.0;
+    float3 vv = (p0 + p1 + p2) / 3.0;
+    float3 b111 = e + (e - vv) * 0.5;
+    float3 pos = b300*w*w*w + b030*u*u*u + b003*v*v*v + b210*3*w*w*u + b120*3*w*u*u + b201*3*w*w*v + b021*3*u*u*v + b012*3*u*v*v + b102*3*w*v*v + b111*6*w*u*v;
+    float w0 = patch[0].pos.w, w1 = patch[1].pos.w, w2 = patch[2].pos.w;
+    float ww = w0*w + w1*u + w2*v;
+    float3 n200 = n0, n020 = n1, n002 = n2;
+    float3 n110 = normalize(n0 + n1), n011 = normalize(n1 + n2), n101 = normalize(n2 + n0);
+    float3 nrm = n200*w*w + n020*u*u + n002*v*v + n110*2*w*u + n011*2*u*v + n101*2*w*v;
+    nrm = normalize(nrm);
+    DS_OUT o;
+    o.pos = float4(pos, ww);
+    o.nrm = nrm;
+    o.uv = patch[0].uv*w + patch[1].uv*u + patch[2].uv*v;
+    o.col = patch[0].col*w + patch[1].col*u + patch[2].col*v;
+    return o;
+}
 )";
 
     if (impl_->pnHs_ == gfx::ShaderHandle::Invalid) {
