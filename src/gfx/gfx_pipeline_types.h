@@ -63,7 +63,7 @@ inline bool hasFlag(TextureUsage v, TextureUsage f) {
     return (static_cast<u32>(v) & static_cast<u32>(f)) != 0;
 }
 
-enum class PrimitiveTopology { TriangleList, TriangleStrip, LineList };
+enum class PrimitiveTopology { TriangleList, TriangleStrip, LineList, PatchList3 };
 
 enum class CullMode { None, Back, Front };
 enum class FillMode { Solid, Wireframe };
@@ -86,7 +86,7 @@ enum class BlendOp { Add, Subtract };
 enum class Filter { Point, Linear };
 enum class AddressMode { Wrap, Clamp, Mirror };
 
-enum class ShaderStage { Vertex, Pixel, Compute };
+enum class ShaderStage { Vertex, Hull, Domain, Pixel, Compute };
 
 struct BufferDesc {
     u64 size = 0;
@@ -176,9 +176,15 @@ constexpr u32 kMaxColorAttachments = 4;
 
 struct GraphicsPipelineDesc {
     ShaderHandle vs = ShaderHandle{0};
+    ShaderHandle hs = ShaderHandle{0};
+    ShaderHandle ds = ShaderHandle{0};
     ShaderHandle ps = ShaderHandle{0};
     std::span<const InputElement> inputLayout;
     PrimitiveTopology topology = PrimitiveTopology::TriangleList;
+    // Tessellation (PN-Triangle) — off by default, preserves all existing PSOs.
+    bool tessellationEnabled = false;
+    u32 patchControlPoints = 3;
+    f32 tessFactor = 1.0f;
     BlendDesc blend;
     DepthStencilDesc depthStencil;
     RasterizerDesc rasterizer;

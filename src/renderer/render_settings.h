@@ -345,6 +345,63 @@ public:
         orbitAxisMode_.store(static_cast<i32>(m));
     }
 
+    // ---- PN-Triangle geometry enhancement (Task 2) ----
+    enum class PnMode : i32 { Off = 0, X2 = 1, X4 = 2, X8 = 3, Adaptive = 4 };
+    PnMode GetPnMode() const {
+        return static_cast<PnMode>(pnMode_.load());
+    }
+    void SetPnMode(PnMode m) {
+        pnMode_.store(static_cast<i32>(m));
+    }
+    f32 PnTessFactor() const {
+        switch (GetPnMode()) {
+        case PnMode::X2: return 2.0f;
+        case PnMode::X4: return 4.0f;
+        case PnMode::X8: return 8.0f;
+        case PnMode::Adaptive: return 4.0f;
+        default: return 1.0f;
+        }
+    }
+    f32 PnCreaseThreshold() const {
+        return loadF32(pnCreaseThreshold_);
+    }
+    void SetPnCreaseThreshold(f32 v) {
+        storeF32(pnCreaseThreshold_, v);
+    }
+
+    // ---- Motion vector & Neural rendering (Tasks 3/1) ----
+    enum class MvSource : i32 { OpticalFlow = 0, RendererTrueMV = 1 };
+    MvSource GetMvSource() const {
+        return static_cast<MvSource>(mvSource_.load());
+    }
+    void SetMvSource(MvSource s) {
+        mvSource_.store(static_cast<i32>(s));
+    }
+    bool VelocityDebug() const {
+        return velocityDebug_.load();
+    }
+    void SetVelocityDebug(bool v) {
+        velocityDebug_.store(v);
+    }
+    bool VelocityFlipX() const {
+        return velocityFlipX_.load();
+    }
+    void SetVelocityFlipX(bool v) {
+        velocityFlipX_.store(v);
+    }
+    bool VelocityFlipY() const {
+        return velocityFlipY_.load();
+    }
+    void SetVelocityFlipY(bool v) {
+        velocityFlipY_.store(v);
+    }
+    bool NeuralRenderingEnabled() const {
+        return neuralRenderingEnabled_.load();
+    }
+    void SetNeuralRenderingEnabled(bool v) {
+        neuralRenderingEnabled_.store(v);
+    }
+
     // ---- Preferred GFX device ----
     // Exact-match name of the physical adapter the host wants the
     // selected backend to open (compared verbatim against the names
@@ -469,6 +526,17 @@ private:
     // Orbit camera state (host-driven, persisted via INI).
     std::atomic<i32> orbitMode_{static_cast<i32>(OrbitMode::Manual)};
     std::atomic<i32> orbitAxisMode_{static_cast<i32>(OrbitAxisMode::CameraOrbit)};
+
+    // PN-Triangle state (Task 2).
+    std::atomic<i32> pnMode_{static_cast<i32>(PnMode::Off)};
+    std::atomic<u32> pnCreaseThreshold_{0x42700000u}; // 60.0f degrees
+
+    // Motion vector + neural rendering (Tasks 3/1).
+    std::atomic<i32> mvSource_{static_cast<i32>(MvSource::OpticalFlow)};
+    std::atomic<bool> velocityDebug_{false};
+    std::atomic<bool> velocityFlipX_{false};
+    std::atomic<bool> velocityFlipY_{true}; // Y flip commonly needed for UV vs NDC
+    std::atomic<bool> neuralRenderingEnabled_{false};
 };
 
 } // namespace whiteout::flakes::renderer

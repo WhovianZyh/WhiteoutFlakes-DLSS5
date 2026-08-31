@@ -527,6 +527,41 @@ void LoadSettingsIni(RenderService& service, bool& loopNonLoopingPolicy, bool& f
         if (ParseInt(*s, v) && v >= 0 && v <= 1)
             service.Settings().SetOrbitAxisMode(static_cast<RenderSettings::OrbitAxisMode>(v));
     }
+    if (auto* s = ini.Get(KeyOf("PnMode"))) {
+        i32 v = 0;
+        if (ParseInt(*s, v) && v >= 0 && v <= 4)
+            service.Settings().SetPnMode(static_cast<RenderSettings::PnMode>(v));
+    }
+    if (auto* s = ini.Get(KeyOf("PnCreaseThreshold"))) {
+        f32 v = 60.0f;
+        if (ParseFloat(*s, v))
+            service.Settings().SetPnCreaseThreshold(v);
+    }
+    if (auto* s = ini.Get(KeyOf("MvSource"))) {
+        i32 v = 0;
+        if (ParseInt(*s, v) && v >= 0 && v <= 1)
+            service.Settings().SetMvSource(static_cast<RenderSettings::MvSource>(v));
+    }
+    if (auto* s = ini.Get(KeyOf("VelocityDebug"))) {
+        bool v = false;
+        if (ParseBool(*s, v))
+            service.Settings().SetVelocityDebug(v);
+    }
+    if (auto* s = ini.Get(KeyOf("VelocityFlipX"))) {
+        bool v = false;
+        if (ParseBool(*s, v))
+            service.Settings().SetVelocityFlipX(v);
+    }
+    if (auto* s = ini.Get(KeyOf("VelocityFlipY"))) {
+        bool v = true;
+        if (ParseBool(*s, v))
+            service.Settings().SetVelocityFlipY(v);
+    }
+    if (auto* s = ini.Get(KeyOf("NeuralRenderingEnabled"))) {
+        bool v = false;
+        if (ParseBool(*s, v))
+            service.Settings().SetNeuralRenderingEnabled(v);
+    }
     if (auto* dnc = service.GetDncService()) {
         if (auto* s = ini.Get(KeyOf("TimeOfDay"))) {
             f32 v = 0;
@@ -629,6 +664,13 @@ void SaveSettingsIni(const RenderService& service, bool loopNonLoopingPolicy, bo
     ini.Set(KeyOf("DofFarFieldOnly"), service.Settings().DofFarFieldOnly() ? "1" : "0");
     ini.Set(KeyOf("OrbitMode"), ToString(static_cast<i32>(service.Settings().GetOrbitMode())));
     ini.Set(KeyOf("OrbitAxisMode"), ToString(static_cast<i32>(service.Settings().GetOrbitAxisMode())));
+    ini.Set(KeyOf("PnMode"), ToString(static_cast<i32>(service.Settings().GetPnMode())));
+    ini.Set(KeyOf("PnCreaseThreshold"), FloatToString(service.Settings().PnCreaseThreshold()));
+    ini.Set(KeyOf("MvSource"), ToString(static_cast<i32>(service.Settings().GetMvSource())));
+    ini.Set(KeyOf("VelocityDebug"), service.Settings().VelocityDebug() ? "1" : "0");
+    ini.Set(KeyOf("VelocityFlipX"), service.Settings().VelocityFlipX() ? "1" : "0");
+    ini.Set(KeyOf("VelocityFlipY"), service.Settings().VelocityFlipY() ? "1" : "0");
+    ini.Set(KeyOf("NeuralRenderingEnabled"), service.Settings().NeuralRenderingEnabled() ? "1" : "0");
     if (const auto* dnc = service.GetDncService()) {
         ini.Set(KeyOf("TimeOfDay"), FloatToString(dnc->GetTimeOfDay()));
         ini.Set(KeyOf("AnimateTod"), dnc->GetTodScale() > 0.0f ? "1" : "0");

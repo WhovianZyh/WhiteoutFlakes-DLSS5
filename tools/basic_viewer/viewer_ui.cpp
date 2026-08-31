@@ -776,6 +776,56 @@ void ViewerUI::BuildMenuBar() {
             }
 
             ImGui::Separator();
+            // ---- DLSS5 / PN experimental (Tasks 2/3) ----
+            {
+                bool velDbg = svc.Settings().VelocityDebug();
+                if (ImGui::MenuItem("Velocity Debug View", nullptr, &velDbg)) {
+                    svc.Settings().SetVelocityDebug(velDbg);
+                    SaveIni(app_);
+                }
+            }
+            {
+                bool neural = svc.Settings().NeuralRenderingEnabled();
+                if (ImGui::MenuItem("Neural Rendering (Feeder)", nullptr, &neural)) {
+                    svc.Settings().SetNeuralRenderingEnabled(neural);
+                    SaveIni(app_);
+                }
+            }
+            if (ImGui::BeginMenu("Motion Vector Source")) {
+                auto src = svc.Settings().GetMvSource();
+                bool isOpt = src == RenderSettings::MvSource::OpticalFlow;
+                if (ImGui::MenuItem("Optical Flow (ReShade)", nullptr, isOpt)) {
+                    svc.Settings().SetMvSource(RenderSettings::MvSource::OpticalFlow);
+                    SaveIni(app_);
+                }
+                bool isTrue = src == RenderSettings::MvSource::RendererTrueMV;
+                if (ImGui::MenuItem("Renderer True MV", nullptr, isTrue)) {
+                    svc.Settings().SetMvSource(RenderSettings::MvSource::RendererTrueMV);
+                    SaveIni(app_);
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("PN Crease Threshold")) {
+                float thr = svc.Settings().PnCreaseThreshold();
+                bool is30 = thr < 35.0f;
+                bool is60 = thr >= 35.0f && thr < 75.0f;
+                bool is90 = thr >= 75.0f;
+                if (ImGui::MenuItem("30 deg (smooth)", nullptr, is30)) {
+                    svc.Settings().SetPnCreaseThreshold(30.0f);
+                    SaveIni(app_);
+                }
+                if (ImGui::MenuItem("60 deg (default)", nullptr, is60)) {
+                    svc.Settings().SetPnCreaseThreshold(60.0f);
+                    SaveIni(app_);
+                }
+                if (ImGui::MenuItem("90 deg (preserve)", nullptr, is90)) {
+                    svc.Settings().SetPnCreaseThreshold(90.0f);
+                    SaveIni(app_);
+                }
+                ImGui::EndMenu();
+            }
+
+            ImGui::Separator();
             if (ImGui::BeginMenu(i18n::tr("menu.view.tileset"))) {
                 const i32 n = static_cast<i32>(io::Tileset::Count);
                 const i32 cur = static_cast<i32>(io::GetCurrentTileset());
@@ -972,6 +1022,19 @@ void ViewerUI::BuildToolbar() {
         ImGui::SetNextItemWidth(90);
         if (ImGui::Combo("##orbitAxis", &axisSel, axisItems, 2)) {
             svc.Settings().SetOrbitAxisMode(static_cast<RenderSettings::OrbitAxisMode>(axisSel));
+            SaveIni(app_);
+        }
+        ImGui::SameLine();
+    }
+
+    // ---- PN-Triangle (Task 2) ----
+    {
+        auto pn = svc.Settings().GetPnMode();
+        i32 sel = static_cast<i32>(pn);
+        const char* items[] = {"Geo Off", "PN x2", "PN x4", "PN x8", "PN Adaptive"};
+        ImGui::SetNextItemWidth(120);
+        if (ImGui::Combo("##pn", &sel, items, 5)) {
+            svc.Settings().SetPnMode(static_cast<RenderSettings::PnMode>(sel));
             SaveIni(app_);
         }
         ImGui::SameLine();
