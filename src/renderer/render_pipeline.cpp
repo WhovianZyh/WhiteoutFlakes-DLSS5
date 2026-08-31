@@ -1157,11 +1157,26 @@ bool RenderPipeline::EnsurePnShaders() {
     if (rs_.Settings().GetPnMode() == RenderSettings::PnMode::Off)
         return false;
 
+    // PnParams CB is 80 bytes: tessFactor/crease/pad[2] (16) + viewProj 4x4 (64)
+    const usize kPnCbSize = 80;
     if (impl_->pnCb_ == gfx::BufferHandle::Invalid) {
         impl_->pnCb_ = impl_->gfx_->CreateBuffer(
-            {.size = 16, .usage = gfx::BufferUsage::Constant | gfx::BufferUsage::CpuWritable});
+            {.size = kPnCbSize, .usage = gfx::BufferUsage::Constant | gfx::BufferUsage::CpuWritable});
         if (impl_->pnCb_ == gfx::BufferHandle::Invalid)
             return false;
+    } else {
+        // Recreate if old size was 16 (pre world-space)
+        auto* e = impl_->gfx_->GetImmediateContext(); // dummy to keep, actual check via buffer desc size not exposed; just recreate if not ready
+        (void)e;
+        // If already created with old size, the UpdateBuffer of 80 would overflow; destroy and recreate once
+        // Heuristic: if pnShadersReady_ is false but pnCb exists, it may be old size -> recreate
+        if (!impl_->pnShadersReady_) {
+            impl_->gfx_->Destroy(impl_->pnCb_);
+            impl_->pnCb_ = impl_->gfx_->CreateBuffer(
+                {.size = kPnCbSize, .usage = gfx::BufferUsage::Constant | gfx::BufferUsage::CpuWritable});
+            if (impl_->pnCb_ == gfx::BufferHandle::Invalid)
+                return false;
+        }
     }
 
     auto compileHlsl = [&](const char* src, const char* entry, const char* target,
@@ -1188,21 +1203,21 @@ bool RenderPipeline::EnsurePnShaders() {
     };
 
     const char* hsSrc = R"(
-cbuffer PnParams : register(b1) { float g_tessFactor; float g_crease; float2 _pad; };
-struct VS_OUT { float4 pos : SV_Position; float3 nrm : NORMAL; float2 uv : TEXCOORD0; float4 col : COLOR0; };
+cbuffer PnParams : register(b1) { float g_tessFactor; float g_crease; float2 _pad; float4x4 g_viewProj; };
+struct VS_OUT { float4 pos : SV_Position; float4 col : COLOR0; float4 uv : TEXCOORD0; float4 worldPos : TEXCOORD1; float3 nrm : TEXCOORD2; float4 tang : TEXCOORD3; };
 struct HS_CONST { float edges[3] : SV_TessFactor; float inside : SV_InsideTessFactor; };
 HS_CONST HSConst(InputPatch<VS_OUT,3> ip) { HS_CONST o; float f = clamp(g_tessFactor,1,8); o.edges[0]=o.edges[1]=o.edges[2]=f; o.inside=f; return o; }
 [domain("tri")] [partitioning("fractional_even")] [outputtopology("triangle_cw")] [outputcontrolpoints(3)] [patchconstantfunc("HSConst")] VS_OUT HS(InputPatch<VS_OUT,3> ip, uint id : SV_OutputControlPointID) { return ip[id]; }
 )";
 
     const char* dsSrc = R"(
-cbuffer PnParams : register(b1) { float g_tessFactor; float g_crease; float2 _pad; };
-struct DS_IN { float4 pos : SV_Position; float3 nrm : NORMAL; float2 uv : TEXCOORD0; float4 col : COLOR0; };
-struct DS_OUT { float4 pos : SV_Position; float3 nrm : NORMAL; float2 uv : TEXCOORD0; float4 col : COLOR0; };
+cbuffer PnParams : register(b1) { float g_tessFactor; float g_crease; float2 _pad; float4x4 g_viewProj; };
+struct DS_IN { float4 pos : SV_Position; float4 col : COLOR0; float4 uv : TEXCOORD0; float4 worldPos : TEXCOORD1; float3 nrm : TEXCOORD2; float4 tang : TEXCOORD3; };
+struct DS_OUT { float4 pos : SV_Position; float4 col : COLOR0; float4 uv : TEXCOORD0; float3 nrm : TEXCOORD2; float4 tang : TEXCOORD3; };
 struct HS_CONST { float edges[3] : SV_TessFactor; float inside : SV_InsideTessFactor; };
 [domain("tri")] DS_OUT DS(HS_CONST hsc, float3 bary : SV_DomainLocation, const OutputPatch<DS_IN,3> patch) {
     float u = bary.x, v = bary.y, w = bary.z;
-    float3 p0 = patch[0].pos.xyz, p1 = patch[1].pos.xyz, p2 = patch[2].pos.xyz;
+    float3 p0 = patch[0].worldPos.xyz, p1 = patch[1].worldPos.xyz, p2 = patch[2].worldPos.xyz;
     float3 n0 = normalize(patch[0].nrm), n1 = normalize(patch[1].nrm), n2 = normalize(patch[2].nrm);
     float3 b300 = p0, b030 = p1, b003 = p2;
     float w12 = dot(p1 - p0, n0); float3 b210 = (2.0 * p0 + p1 - w12 * n0) / 3.0;
@@ -1214,18 +1229,17 @@ struct HS_CONST { float edges[3] : SV_TessFactor; float inside : SV_InsideTessFa
     float3 e = (b210 + b120 + b021 + b012 + b102 + b201) / 6.0;
     float3 vv = (p0 + p1 + p2) / 3.0;
     float3 b111 = e + (e - vv) * 0.5;
-    float3 pos = b300*w*w*w + b030*u*u*u + b003*v*v*v + b210*3*w*w*u + b120*3*w*u*u + b201*3*w*w*v + b021*3*u*u*v + b012*3*u*v*v + b102*3*w*v*v + b111*6*w*u*v;
-    float w0 = patch[0].pos.w, w1 = patch[1].pos.w, w2 = patch[2].pos.w;
-    float ww = w0*w + w1*u + w2*v;
+    float3 worldPos = b300*w*w*w + b030*u*u*u + b003*v*v*v + b210*3*w*w*u + b120*3*w*u*u + b201*3*w*w*v + b021*3*u*u*v + b012*3*u*v*v + b102*3*w*v*v + b111*6*w*u*v;
     float3 n200 = n0, n020 = n1, n002 = n2;
     float3 n110 = normalize(n0 + n1), n011 = normalize(n1 + n2), n101 = normalize(n2 + n0);
     float3 nrm = n200*w*w + n020*u*u + n002*v*v + n110*2*w*u + n011*2*u*v + n101*2*w*v;
     nrm = normalize(nrm);
     DS_OUT o;
-    o.pos = float4(pos, ww);
-    o.nrm = nrm;
-    o.uv = patch[0].uv*w + patch[1].uv*u + patch[2].uv*v;
+    o.pos = mul(g_viewProj, float4(worldPos, 1.0));
     o.col = patch[0].col*w + patch[1].col*u + patch[2].col*v;
+    o.uv = patch[0].uv*w + patch[1].uv*u + patch[2].uv*v;
+    o.nrm = nrm;
+    o.tang = patch[0].tang*w + patch[1].tang*u + patch[2].tang*v;
     return o;
 }
 )";
@@ -2456,7 +2470,20 @@ public:
                 float tessFactor;
                 float crease;
                 float pad[2];
-            } cb{rs_.Settings().PnTessFactor(), rs_.Settings().PnCreaseThreshold(), {0, 0}};
+                Matrix44f viewProj;
+            } cb{};
+            cb.tessFactor = rs_.Settings().PnTessFactor();
+            cb.crease = rs_.Settings().PnCreaseThreshold();
+            cb.pad[0] = cb.pad[1] = 0;
+            {
+                const f32 aspect = rs_.Pipeline().Height() > 0
+                                       ? static_cast<f32>(rs_.Pipeline().Width()) /
+                                             static_cast<f32>(rs_.Pipeline().Height())
+                                       : 1.0f;
+                Matrix44f view = rs_.Pipeline().FrameCamera().GetViewMatrix();
+                Matrix44f proj = rs_.Pipeline().FrameCamera().ProjectionRH(aspect);
+                cb.viewProj = proj * view;
+            }
             impl->gfx_->UpdateBuffer(impl->pnCb_, &cb, sizeof(cb));
             cmd->BindConstantBuffer(gfx::ShaderStage::Hull, 1, impl->pnCb_);
             cmd->BindConstantBuffer(gfx::ShaderStage::Domain, 1, impl->pnCb_);
@@ -2885,7 +2912,20 @@ public:
                         float tessFactor;
                         float crease;
                         float pad[2];
-                    } cb{rs_.Settings().PnTessFactor(), rs_.Settings().PnCreaseThreshold(), {0, 0}};
+                        Matrix44f viewProj;
+                    } cb{};
+                    cb.tessFactor = rs_.Settings().PnTessFactor();
+                    cb.crease = rs_.Settings().PnCreaseThreshold();
+                    cb.pad[0] = cb.pad[1] = 0;
+                    {
+                        const f32 aspect = rs_.Pipeline().Height() > 0
+                                               ? static_cast<f32>(rs_.Pipeline().Width()) /
+                                                     static_cast<f32>(rs_.Pipeline().Height())
+                                               : 1.0f;
+                        Matrix44f view = rs_.Pipeline().FrameCamera().ViewLH();
+                        Matrix44f proj = rs_.Pipeline().FrameCamera().ProjectionLH(aspect);
+                        cb.viewProj = proj * view;
+                    }
                     rs_.Pipeline().impl_->gfx_->UpdateBuffer(rs_.Pipeline().impl_->pnCb_, &cb,
                                                               sizeof(cb));
                     cmd->BindConstantBuffer(gfx::ShaderStage::Hull, 1, rs_.Pipeline().impl_->pnCb_);
