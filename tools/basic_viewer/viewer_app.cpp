@@ -3,6 +3,7 @@
 #include "renderer/assets/replaceable_texture_manager.h"
 #include "renderer/camera.h"
 #include "renderer/debug/debug_renderer.h"
+#include "renderer/orbit_camera.h"
 #include "renderer/frame_ticker.h"
 #include "renderer/model/model_instance.h"
 #include "renderer/model/model_loader.h"
@@ -1654,6 +1655,27 @@ void ViewerApp::Tick(f32 dt) {
             hero->worldTransform.data[3][0] += delta;
             const auto t = service_.Scene().Camera().GetTarget();
             service_.Scene().Camera().SetTarget(t.x + delta, t.y, t.z);
+        }
+    }
+
+    // ---- Auto orbit camera (Task 1.3, DLSS5/PN baseline) ----
+    if (!cameraLocked_ && !inCallbackRedraw_) {
+        auto orbitMode = service_.Settings().GetOrbitMode();
+        auto orbitAxis = service_.Settings().GetOrbitAxisMode();
+        if (orbitMode != RenderSettings::OrbitMode::Manual) {
+            auto& cam = service_.Scene().Camera();
+            if (cam.GetMode() == Camera::Mode::Orbital) {
+                if (orbitAxis == RenderSettings::OrbitAxisMode::CameraOrbit) {
+                    UpdateOrbitCamera(cam, dt, orbitMode, orbitAxis);
+                } else if (hero) {
+                    const f32 speed = OrbitSpeedForMode(orbitMode);
+                    if (speed != 0.0f && dt > 0.0f) {
+                        const f32 delta = speed * dt;
+                        const Matrix44f rot = Matrix44f::rotation_z(delta);
+                        hero->worldTransform = rot * hero->worldTransform;
+                    }
+                }
+            }
         }
     }
 

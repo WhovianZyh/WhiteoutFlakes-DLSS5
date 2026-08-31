@@ -955,6 +955,28 @@ void ViewerUI::BuildToolbar() {
         ImGui::SameLine();
     }
 
+    // ---- Orbit camera (Task 1.3) ----
+    {
+        auto mode = svc.Settings().GetOrbitMode();
+        i32 sel = static_cast<i32>(mode);
+        const char* items[] = {"Manual", "Orbit Slow", "Orbit Medium", "Orbit Fast"};
+        ImGui::SetNextItemWidth(130);
+        if (ImGui::Combo("##orbit", &sel, items, 4)) {
+            svc.Settings().SetOrbitMode(static_cast<RenderSettings::OrbitMode>(sel));
+            SaveIni(app_);
+        }
+        ImGui::SameLine();
+        auto axis = svc.Settings().GetOrbitAxisMode();
+        i32 axisSel = static_cast<i32>(axis);
+        const char* axisItems[] = {"Camera", "Model"};
+        ImGui::SetNextItemWidth(90);
+        if (ImGui::Combo("##orbitAxis", &axisSel, axisItems, 2)) {
+            svc.Settings().SetOrbitAxisMode(static_cast<RenderSettings::OrbitAxisMode>(axisSel));
+            SaveIni(app_);
+        }
+        ImGui::SameLine();
+    }
+
     // ---- Team colour ----
     {
         model::Actor* focus = app_.FocusActorPtr();

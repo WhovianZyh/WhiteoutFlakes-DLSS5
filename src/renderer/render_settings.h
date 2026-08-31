@@ -329,6 +329,22 @@ public:
         defaultBackend_ = b;
     }
 
+    // ---- Orbit camera (Viewer host-driven, Task 1.3) ----
+    enum class OrbitMode : i32 { Manual = 0, Slow = 1, Medium = 2, Fast = 3 };
+    enum class OrbitAxisMode : i32 { CameraOrbit = 0, ModelRotate = 1 };
+    OrbitMode GetOrbitMode() const {
+        return static_cast<OrbitMode>(orbitMode_.load());
+    }
+    void SetOrbitMode(OrbitMode m) {
+        orbitMode_.store(static_cast<i32>(m));
+    }
+    OrbitAxisMode GetOrbitAxisMode() const {
+        return static_cast<OrbitAxisMode>(orbitAxisMode_.load());
+    }
+    void SetOrbitAxisMode(OrbitAxisMode m) {
+        orbitAxisMode_.store(static_cast<i32>(m));
+    }
+
     // ---- Preferred GFX device ----
     // Exact-match name of the physical adapter the host wants the
     // selected backend to open (compared verbatim against the names
@@ -449,6 +465,10 @@ private:
 
     // Host-only: preferred physical device name. Empty = default pick.
     std::string preferredDevice_;
+
+    // Orbit camera state (host-driven, persisted via INI).
+    std::atomic<i32> orbitMode_{static_cast<i32>(OrbitMode::Manual)};
+    std::atomic<i32> orbitAxisMode_{static_cast<i32>(OrbitAxisMode::CameraOrbit)};
 };
 
 } // namespace whiteout::flakes::renderer

@@ -517,6 +517,16 @@ void LoadSettingsIni(RenderService& service, bool& loopNonLoopingPolicy, bool& f
         if (ParseBool(*s, v))
             service.Settings().SetDofFarFieldOnly(v);
     }
+    if (auto* s = ini.Get(KeyOf("OrbitMode"))) {
+        i32 v = 0;
+        if (ParseInt(*s, v) && v >= 0 && v <= 3)
+            service.Settings().SetOrbitMode(static_cast<RenderSettings::OrbitMode>(v));
+    }
+    if (auto* s = ini.Get(KeyOf("OrbitAxisMode"))) {
+        i32 v = 0;
+        if (ParseInt(*s, v) && v >= 0 && v <= 1)
+            service.Settings().SetOrbitAxisMode(static_cast<RenderSettings::OrbitAxisMode>(v));
+    }
     if (auto* dnc = service.GetDncService()) {
         if (auto* s = ini.Get(KeyOf("TimeOfDay"))) {
             f32 v = 0;
@@ -617,6 +627,8 @@ void SaveSettingsIni(const RenderService& service, bool loopNonLoopingPolicy, bo
     ini.Set(KeyOf("DofMaxBlurSize"), FloatToString(service.Settings().DofMaxBlurSize()));
     ini.Set(KeyOf("DofRadiusScale"), FloatToString(service.Settings().DofRadiusScale()));
     ini.Set(KeyOf("DofFarFieldOnly"), service.Settings().DofFarFieldOnly() ? "1" : "0");
+    ini.Set(KeyOf("OrbitMode"), ToString(static_cast<i32>(service.Settings().GetOrbitMode())));
+    ini.Set(KeyOf("OrbitAxisMode"), ToString(static_cast<i32>(service.Settings().GetOrbitAxisMode())));
     if (const auto* dnc = service.GetDncService()) {
         ini.Set(KeyOf("TimeOfDay"), FloatToString(dnc->GetTimeOfDay()));
         ini.Set(KeyOf("AnimateTod"), dnc->GetTodScale() > 0.0f ? "1" : "0");
