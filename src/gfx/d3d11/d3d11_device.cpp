@@ -451,6 +451,12 @@ ShaderHandle D3D11Device::CreateShader(ShaderStage stage, const void* bytecode, 
     case ShaderStage::Vertex:
         hr = device_->CreateVertexShader(bytecode, size, nullptr, &entry.vs);
         break;
+    case ShaderStage::Hull:
+        hr = device_->CreateHullShader(bytecode, size, nullptr, &entry.hs);
+        break;
+    case ShaderStage::Domain:
+        hr = device_->CreateDomainShader(bytecode, size, nullptr, &entry.ds);
+        break;
     case ShaderStage::Pixel:
         hr = device_->CreatePixelShader(bytecode, size, nullptr, &entry.ps);
         break;
@@ -481,7 +487,6 @@ void D3D11Device::Destroy(ShaderHandle h) {
 PipelineHandle D3D11Device::CreateGraphicsPipeline(const GraphicsPipelineDesc& desc) {
     PipelineEntry entry{};
     entry.isCompute = false;
-    entry.topology = ToD3D11(desc.topology);
 
     auto* vsEntry = shaders_.Get(static_cast<u64>(desc.vs));
     auto* psEntry = shaders_.Get(static_cast<u64>(desc.ps));
@@ -489,6 +494,19 @@ PipelineHandle D3D11Device::CreateGraphicsPipeline(const GraphicsPipelineDesc& d
         return PipelineHandle::Invalid;
     entry.vs = vsEntry->vs;
     entry.ps = psEntry ? psEntry->ps : nullptr;
+
+    // PN-Triangle tessellation: optional HS/DS, patch topology
+    if (desc.tessellationEnabled) {
+        auto* hsEntry = shaders_.Get(static_cast<u64>(desc.hs));
+        auto* dsEntry = shaders_.Get(static_cast<u64>(desc.ds));
+        entry.hs = hsEntry ? hsEntry->hs : nullptr;
+        entry.ds = dsEntry ? dsEntry->ds : nullptr;
+        entry.topology = D3D11_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST;
+    } else {
+        entry.hs = nullptr;
+        entry.ds = nullptr;
+        entry.topology = ToD3D11(desc.topology);
+    }
 
     D3D11_BLEND_DESC bd{};
     bd.AlphaToCoverageEnable = desc.blend.alphaToCoverage ? TRUE : FALSE;

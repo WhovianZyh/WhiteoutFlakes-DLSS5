@@ -112,6 +112,8 @@ void D3D11CommandList::BindPipeline(PipelineHandle h) {
         ctx->CSSetShader(pso->cs, nullptr, 0);
     } else {
         ctx->VSSetShader(pso->vs, nullptr, 0);
+        ctx->HSSetShader(pso->hs, nullptr, 0);
+        ctx->DSSetShader(pso->ds, nullptr, 0);
         ctx->PSSetShader(pso->ps, nullptr, 0);
         ctx->IASetInputLayout(pso->inputLayout);
         ctx->IASetPrimitiveTopology(pso->topology);
@@ -144,6 +146,12 @@ void D3D11CommandList::BindConstantBuffer(ShaderStage stage, u32 slot, BufferHan
     case ShaderStage::Vertex:
         ctx->VSSetConstantBuffers(slot, 1, &buf);
         break;
+    case ShaderStage::Hull:
+        ctx->HSSetConstantBuffers(slot, 1, &buf);
+        break;
+    case ShaderStage::Domain:
+        ctx->DSSetConstantBuffers(slot, 1, &buf);
+        break;
     case ShaderStage::Pixel:
         ctx->PSSetConstantBuffers(slot, 1, &buf);
         break;
@@ -161,6 +169,12 @@ void D3D11CommandList::BindShaderResource(ShaderStage stage, u32 slot, TextureHa
     case ShaderStage::Vertex:
         ctx->VSSetShaderResources(slot, 1, &srv);
         break;
+    case ShaderStage::Hull:
+        ctx->HSSetShaderResources(slot, 1, &srv);
+        break;
+    case ShaderStage::Domain:
+        ctx->DSSetShaderResources(slot, 1, &srv);
+        break;
     case ShaderStage::Pixel:
         ctx->PSSetShaderResources(slot, 1, &srv);
         break;
@@ -177,6 +191,12 @@ void D3D11CommandList::BindShaderResource(ShaderStage stage, u32 slot, BufferHan
     switch (stage) {
     case ShaderStage::Vertex:
         ctx->VSSetShaderResources(slot, 1, &srv);
+        break;
+    case ShaderStage::Hull:
+        ctx->HSSetShaderResources(slot, 1, &srv);
+        break;
+    case ShaderStage::Domain:
+        ctx->DSSetShaderResources(slot, 1, &srv);
         break;
     case ShaderStage::Pixel:
         ctx->PSSetShaderResources(slot, 1, &srv);
@@ -201,6 +221,12 @@ void D3D11CommandList::BindSampler(ShaderStage stage, u32 slot, SamplerHandle h)
     switch (stage) {
     case ShaderStage::Vertex:
         ctx->VSSetSamplers(slot, 1, &sampler);
+        break;
+    case ShaderStage::Hull:
+        ctx->HSSetSamplers(slot, 1, &sampler);
+        break;
+    case ShaderStage::Domain:
+        ctx->DSSetSamplers(slot, 1, &sampler);
         break;
     case ShaderStage::Pixel:
         ctx->PSSetSamplers(slot, 1, &sampler);

@@ -101,6 +101,8 @@ inline D3D11_PRIMITIVE_TOPOLOGY ToD3D11(PrimitiveTopology t) {
         return D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP;
     case PrimitiveTopology::LineList:
         return D3D11_PRIMITIVE_TOPOLOGY_LINELIST;
+    case PrimitiveTopology::PatchList3:
+        return D3D11_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST;
     default:
         return D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
     }

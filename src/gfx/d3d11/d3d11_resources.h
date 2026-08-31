@@ -38,6 +38,8 @@ struct TextureEntry {
 
 struct ShaderEntry {
     ID3D11VertexShader* vs = nullptr;
+    ID3D11HullShader* hs = nullptr;
+    ID3D11DomainShader* ds = nullptr;
     ID3D11PixelShader* ps = nullptr;
     ID3D11ComputeShader* cs = nullptr;
     ShaderStage stage{};
@@ -46,6 +48,8 @@ struct ShaderEntry {
 
     void Release() {
         SafeRelease(vs);
+        SafeRelease(hs);
+        SafeRelease(ds);
         SafeRelease(ps);
         SafeRelease(cs);
         bytecode.clear();
@@ -62,6 +66,8 @@ struct PipelineEntry {
     bool alphaToCoverage = false;
 
     ID3D11VertexShader* vs = nullptr;
+    ID3D11HullShader* hs = nullptr;
+    ID3D11DomainShader* ds = nullptr;
     ID3D11PixelShader* ps = nullptr;
     ID3D11ComputeShader* cs = nullptr;
 
