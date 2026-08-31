@@ -217,6 +217,7 @@ private:
     void RunTonemapPass(const RenderTarget& target, gfx::TextureHandle dstColor);
     bool InitBlsShaders(gfx::GfxApi api);
     void ShutdownBlsShaders();
+    bool EnsurePnShaders();
     bool RenderSplatsBls();
     bool RenderGeosetsBls(GeosetBucket bucket);
     bool RenderGeosetsHd(GeosetBucket bucket);

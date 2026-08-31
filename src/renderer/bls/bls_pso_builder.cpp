@@ -359,6 +359,12 @@ u64 HashRequest(const PsoRequest& r) {
     if (r.extraColorWrite)
         mrtBits |= (1ull << 63);
     k ^= mrtBits * 0xCBF29CE484222325ull;
+    // PN tessellation
+    u64 tessBits = (r.tessEnabled ? 1ull : 0ull);
+    tessBits |= (u64(r.tessFactor * 10.0f) & 0xFFull) << 1;
+    tessBits |= (u64(r.hs) & 0xFFFFull) << 9;
+    tessBits |= (u64(r.ds) & 0xFFFFull) << 25;
+    k ^= tessBits * 0x9E3779B97F4A7C15ull;
     return k;
 }
 
@@ -403,6 +409,14 @@ gfx::PipelineHandle BlsPsoBuilder::GetOrBuild(const PsoRequest& request) {
     }
     desc.extraColorWrite = request.extraColorWrite;
     desc.dsvFormat = request.dsvFormat;
+    desc.hs = request.hs;
+    desc.ds = request.ds;
+    desc.tessellationEnabled = request.tessEnabled;
+    desc.tessFactor = request.tessFactor;
+    if (request.tessEnabled) {
+        desc.topology = gfx::PrimitiveTopology::PatchList3;
+        desc.patchControlPoints = 3;
+    }
 
     gfx::PipelineHandle pso = device_->CreateGraphicsPipeline(desc);
     if (pso != gfx::PipelineHandle::Invalid) {

@@ -113,6 +113,12 @@ struct RenderPipeline::Impl {
     gfx::BufferHandle blsSdOnHdPsCb_ = gfx::BufferHandle::Invalid;
     gfx::BufferHandle blsHdDebugVisCb_ = gfx::BufferHandle::Invalid;
 
+    // ---- PN-Triangle tessellation (Task 2) ----
+    gfx::ShaderHandle pnHs_ = gfx::ShaderHandle::Invalid;
+    gfx::ShaderHandle pnDs_ = gfx::ShaderHandle::Invalid;
+    gfx::BufferHandle pnCb_ = gfx::BufferHandle::Invalid;
+    bool pnShadersReady_ = false;
+
     // ---- Shadow ----
     gfx::PipelineHandle shadowPSO_ = gfx::PipelineHandle::Invalid;
     gfx::PipelineHandle shadowPSORigid_ = gfx::PipelineHandle::Invalid;

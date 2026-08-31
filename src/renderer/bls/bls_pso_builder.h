@@ -45,6 +45,12 @@ struct PsoRequest {
     VertexLayoutKind layout = VertexLayoutKind::MeshSD;
     gfx::PrimitiveTopology topology = gfx::PrimitiveTopology::TriangleList;
 
+    // PN-Triangle tessellation (optional)
+    gfx::ShaderHandle hs = gfx::ShaderHandle::Invalid;
+    gfx::ShaderHandle ds = gfx::ShaderHandle::Invalid;
+    bool tessEnabled = false;
+    f32 tessFactor = 1.0f;
+
     gfx::Format rtvFormat = gfx::Format::R11G11B10_FLOAT;
     // Extra MRT slots. extraRtvCount = 0 → single-RT (existing behaviour).
     // For the HD G-buffer opaque pass set { R32_FLOAT, R8G8B8A8_UNORM }

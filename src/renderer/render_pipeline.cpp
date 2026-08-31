@@ -46,8 +46,19 @@
 #include "shadow/shadow_pass.h"
 #include "whiteout/flakes/util/team_glow_data.h"
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <d3dcompiler.h>
+#pragma comment(lib, "d3dcompiler.lib")
+#endif
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <cstdio>
 #include <cstring>
 #include <numbers>
@@ -1100,6 +1111,15 @@ void RenderPipeline::ShutdownBlsShaders() {
         impl_->gfx_->Destroy(impl_->blsHdDebugVisCb_);
         impl_->blsHdDebugVisCb_ = gfx::BufferHandle::Invalid;
 
+        // PN-Triangle
+        impl_->gfx_->Destroy(impl_->pnHs_);
+        impl_->pnHs_ = gfx::ShaderHandle::Invalid;
+        impl_->gfx_->Destroy(impl_->pnDs_);
+        impl_->pnDs_ = gfx::ShaderHandle::Invalid;
+        impl_->gfx_->Destroy(impl_->pnCb_);
+        impl_->pnCb_ = gfx::BufferHandle::Invalid;
+        impl_->pnShadersReady_ = false;
+
         if (rs_.HasDeviceAssetManagers()) {
             rs_.Textures().ReleaseOwned(kIblFromProbeName);
             rs_.Textures().ReleaseOwned(kIblToProbeName);
@@ -1126,6 +1146,77 @@ void RenderPipeline::ShutdownBlsShaders() {
     impl_->blsPsoTrace_.reset();
     impl_->blsPrograms_.reset();
     impl_->blsShaderCache_.reset();
+}
+
+bool RenderPipeline::EnsurePnShaders() {
+#if defined(_WIN32)
+    if (impl_->pnShadersReady_)
+        return true;
+    if (!impl_->gfx_ || impl_->gfx_->GetApi() != gfx::GfxApi::D3D11)
+        return false;
+    if (rs_.Settings().GetPnMode() == RenderSettings::PnMode::Off)
+        return false;
+
+    if (impl_->pnCb_ == gfx::BufferHandle::Invalid) {
+        impl_->pnCb_ = impl_->gfx_->CreateBuffer(
+            {.size = 16, .usage = gfx::BufferUsage::Constant | gfx::BufferUsage::CpuWritable});
+        if (impl_->pnCb_ == gfx::BufferHandle::Invalid)
+            return false;
+    }
+
+    auto compileHlsl = [&](const char* src, const char* entry, const char* target,
+                           gfx::ShaderHandle& out, gfx::ShaderStage stage) -> bool {
+        ID3DBlob* blob = nullptr;
+        ID3DBlob* err = nullptr;
+        HRESULT hr = D3DCompile(src, strlen(src), nullptr, nullptr, nullptr, entry, target,
+                                D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &blob, &err);
+        if (FAILED(hr)) {
+            if (err)
+                std::fprintf(stderr, "[pn] D3DCompile %s failed: %s\n", entry,
+                             (char*)err->GetBufferPointer());
+            if (blob)
+                blob->Release();
+            if (err)
+                err->Release();
+            return false;
+        }
+        out = impl_->gfx_->CreateShader(stage, blob->GetBufferPointer(), blob->GetBufferSize());
+        blob->Release();
+        if (err)
+            err->Release();
+        return out != gfx::ShaderHandle::Invalid;
+    };
+
+    const char* hsSrc = R"(
+cbuffer PnParams : register(b1) { float g_tessFactor; float g_crease; float2 _pad; };
+struct VS_OUT { float4 pos : SV_Position; float3 nrm : NORMAL; float2 uv : TEXCOORD0; float4 col : COLOR0; };
+struct HS_CONST { float edges[3] : SV_TessFactor; float inside : SV_InsideTessFactor; };
+HS_CONST HSConst(InputPatch<VS_OUT,3> ip) { HS_CONST o; float f = clamp(g_tessFactor,1,8); o.edges[0]=o.edges[1]=o.edges[2]=f; o.inside=f; return o; }
+[domain("tri")] [partitioning("fractional_even")] [outputtopology("triangle_cw")] [outputcontrolpoints(3)] [patchconstantfunc("HSConst")] VS_OUT HS(InputPatch<VS_OUT,3> ip, uint id : SV_OutputControlPointID) { return ip[id]; }
+)";
+
+    const char* dsSrc = R"(
+cbuffer PnParams : register(b1) { float g_tessFactor; float g_crease; float2 _pad; };
+struct DS_IN { float4 pos : SV_Position; float3 nrm : NORMAL; float2 uv : TEXCOORD0; float4 col : COLOR0; };
+struct DS_OUT { float4 pos : SV_Position; float3 nrm : NORMAL; float2 uv : TEXCOORD0; float4 col : COLOR0; };
+struct HS_CONST { float edges[3] : SV_TessFactor; float inside : SV_InsideTessFactor; };
+[domain("tri")] DS_OUT DS(HS_CONST hsc, float3 bary : SV_DomainLocation, const OutputPatch<DS_IN,3> patch) { DS_OUT o; o.pos = patch[0].pos*bary.z + patch[1].pos*bary.x + patch[2].pos*bary.y; o.nrm = normalize(patch[0].nrm*bary.z + patch[1].nrm*bary.x + patch[2].nrm*bary.y); o.uv = patch[0].uv*bary.z + patch[1].uv*bary.x + patch[2].uv*bary.y; o.col = patch[0].col*bary.z + patch[1].col*bary.x + patch[2].col*bary.y; return o; }
+)";
+
+    if (impl_->pnHs_ == gfx::ShaderHandle::Invalid) {
+        if (!compileHlsl(hsSrc, "HS", "hs_5_0", impl_->pnHs_, gfx::ShaderStage::Hull))
+            return false;
+    }
+    if (impl_->pnDs_ == gfx::ShaderHandle::Invalid) {
+        if (!compileHlsl(dsSrc, "DS", "ds_5_0", impl_->pnDs_, gfx::ShaderStage::Domain))
+            return false;
+    }
+    impl_->pnShadersReady_ = true;
+    return true;
+#else
+    (void)impl_;
+    return false;
+#endif
 }
 
 RenderTargetId RenderPipeline::CreateSwapChainTarget(void* nativeWindowHandle, i32 w, i32 h) {
@@ -2317,10 +2408,32 @@ public:
             reqLocal.extraRtvCount = 2;
         }
         reqLocal.dsvFormat = impl->depthStencilFormat_;
+        // PN-Triangle tessellation (Task 2)
+        {
+            auto pnMode = rs_.Settings().GetPnMode();
+            if (pnMode != RenderSettings::PnMode::Off) {
+                if (rs_.Pipeline().EnsurePnShaders()) {
+                    reqLocal.hs = impl->pnHs_;
+                    reqLocal.ds = impl->pnDs_;
+                    reqLocal.tessEnabled = true;
+                    reqLocal.tessFactor = rs_.Settings().PnTessFactor();
+                }
+            }
+        }
         auto pso = impl->blsPsoBuilder_->GetOrBuild(reqLocal);
         if (pso == gfx::PipelineHandle::Invalid)
             return;
         cmd->BindPipeline(pso);
+        if (reqLocal.tessEnabled && impl->pnCb_ != gfx::BufferHandle::Invalid) {
+            struct PnCb {
+                float tessFactor;
+                float crease;
+                float pad[2];
+            } cb{rs_.Settings().PnTessFactor(), rs_.Settings().PnCreaseThreshold(), {0, 0}};
+            impl->gfx_->UpdateBuffer(impl->pnCb_, &cb, sizeof(cb));
+            cmd->BindConstantBuffer(gfx::ShaderStage::Hull, 1, impl->pnCb_);
+            cmd->BindConstantBuffer(gfx::ShaderStage::Domain, 1, impl->pnCb_);
+        }
         cmd->BindVertexBuffer(0, render_detail::PickSlot0Vb(geo, layer.coordId), sizeof(Vertex));
 
         frame.world = view_.worldTransform;
@@ -2724,10 +2837,33 @@ public:
                     matParams.DepthWriteEnabled() && matParams.ColorWriteEnabled();
                 req.dsvFormat = rs_.Pipeline().impl_->depthStencilFormat_;
                 req.lhClipSpace = true;
+                // PN-Triangle
+                {
+                    auto pnMode = rs_.Settings().GetPnMode();
+                    if (pnMode != RenderSettings::PnMode::Off) {
+                        if (rs_.Pipeline().EnsurePnShaders()) {
+                            req.hs = rs_.Pipeline().impl_->pnHs_;
+                            req.ds = rs_.Pipeline().impl_->pnDs_;
+                            req.tessEnabled = true;
+                            req.tessFactor = rs_.Settings().PnTessFactor();
+                        }
+                    }
+                }
                 auto pso = rs_.Pipeline().impl_->blsPsoBuilder_->GetOrBuild(req);
                 if (pso == gfx::PipelineHandle::Invalid)
                     return;
                 cmd->BindPipeline(pso);
+                if (req.tessEnabled && rs_.Pipeline().impl_->pnCb_ != gfx::BufferHandle::Invalid) {
+                    struct PnCb {
+                        float tessFactor;
+                        float crease;
+                        float pad[2];
+                    } cb{rs_.Settings().PnTessFactor(), rs_.Settings().PnCreaseThreshold(), {0, 0}};
+                    rs_.Pipeline().impl_->gfx_->UpdateBuffer(rs_.Pipeline().impl_->pnCb_, &cb,
+                                                              sizeof(cb));
+                    cmd->BindConstantBuffer(gfx::ShaderStage::Hull, 1, rs_.Pipeline().impl_->pnCb_);
+                    cmd->BindConstantBuffer(gfx::ShaderStage::Domain, 1, rs_.Pipeline().impl_->pnCb_);
+                }
 
                 cmd->BindVertexBuffer(0, render_detail::PickSlot0Vb(geo, layer.coordId),
                                       sizeof(Vertex));
