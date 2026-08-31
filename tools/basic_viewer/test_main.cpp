@@ -23,6 +23,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #if defined(_WIN32)
@@ -767,6 +768,16 @@ int main(int argc, char* argv[]) {
         last = now;
         scene.Update(dt);
         app.Tick(dt);
+
+        int maxFps = renderer.Settings().GetMaxFps();
+        if (maxFps > 0) {
+            const auto target = std::chrono::duration<float>(1.0f / static_cast<float>(maxFps));
+            const auto afterTick = std::chrono::steady_clock::now();
+            const auto elapsed = afterTick - now;
+            if (elapsed < target) {
+                std::this_thread::sleep_for(target - elapsed);
+            }
+        }
     }
 
     app.Close();

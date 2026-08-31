@@ -1040,6 +1040,23 @@ void ViewerUI::BuildToolbar() {
         ImGui::SameLine();
     }
 
+    // ---- FPS limiter ----
+    {
+        int fps = svc.Settings().GetMaxFps();
+        int sel = 0;
+        const int vals[] = {0, 30, 60, 120, 144, 240};
+        const char* items[] = {"Unlimited", "30 FPS", "60 FPS", "120 FPS", "144 FPS", "240 FPS"};
+        for (int i = 0; i < 6; ++i)
+            if (vals[i] == fps)
+                sel = i;
+        ImGui::SetNextItemWidth(110);
+        if (ImGui::Combo("##fps", &sel, items, 6)) {
+            svc.Settings().SetMaxFps(vals[sel]);
+            SaveIni(app_);
+        }
+        ImGui::SameLine();
+    }
+
     // ---- Team colour ----
     {
         model::Actor* focus = app_.FocusActorPtr();
@@ -1198,6 +1215,21 @@ void ViewerUI::BuildSettingsWindow() {
             bool on = app_.LoopNonLoopingPolicy();
             if (ImGui::Checkbox(i18n::tr("settings.general.loop_nonlooping"), &on)) {
                 app_.SetLoopNonLoopingPolicy(on);
+                SaveIni(app_);
+            }
+        }
+
+        // ---- FPS limiter ----
+        {
+            int fps = svc.Settings().GetMaxFps();
+            int sel = 0;
+            const int vals[] = {0, 30, 60, 120, 144, 240};
+            const char* items[] = {"Unlimited", "30 FPS", "60 FPS", "120 FPS", "144 FPS", "240 FPS"};
+            for (int i = 0; i < 6; ++i)
+                if (vals[i] == fps)
+                    sel = i;
+            if (ImGui::Combo("FPS Limit", &sel, items, 6)) {
+                svc.Settings().SetMaxFps(vals[sel]);
                 SaveIni(app_);
             }
         }

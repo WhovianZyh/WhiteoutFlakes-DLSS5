@@ -562,6 +562,11 @@ void LoadSettingsIni(RenderService& service, bool& loopNonLoopingPolicy, bool& f
         if (ParseBool(*s, v))
             service.Settings().SetNeuralRenderingEnabled(v);
     }
+    if (auto* s = ini.Get(KeyOf("MaxFps"))) {
+        i32 v = 0;
+        if (ParseInt(*s, v) && v >= 0 && v <= 1000)
+            service.Settings().SetMaxFps(v);
+    }
     if (auto* dnc = service.GetDncService()) {
         if (auto* s = ini.Get(KeyOf("TimeOfDay"))) {
             f32 v = 0;
@@ -671,6 +676,7 @@ void SaveSettingsIni(const RenderService& service, bool loopNonLoopingPolicy, bo
     ini.Set(KeyOf("VelocityFlipX"), service.Settings().VelocityFlipX() ? "1" : "0");
     ini.Set(KeyOf("VelocityFlipY"), service.Settings().VelocityFlipY() ? "1" : "0");
     ini.Set(KeyOf("NeuralRenderingEnabled"), service.Settings().NeuralRenderingEnabled() ? "1" : "0");
+    ini.Set(KeyOf("MaxFps"), ToString(service.Settings().GetMaxFps()));
     if (const auto* dnc = service.GetDncService()) {
         ini.Set(KeyOf("TimeOfDay"), FloatToString(dnc->GetTimeOfDay()));
         ini.Set(KeyOf("AnimateTod"), dnc->GetTodScale() > 0.0f ? "1" : "0");

@@ -402,6 +402,14 @@ public:
         neuralRenderingEnabled_.store(v);
     }
 
+    // ---- Frame rate limiter ----
+    int GetMaxFps() const {
+        return maxFps_.load();
+    }
+    void SetMaxFps(int fps) {
+        maxFps_.store(fps);
+    }
+
     // ---- Preferred GFX device ----
     // Exact-match name of the physical adapter the host wants the
     // selected backend to open (compared verbatim against the names
@@ -537,6 +545,9 @@ private:
     std::atomic<bool> velocityFlipX_{false};
     std::atomic<bool> velocityFlipY_{true}; // Y flip commonly needed for UV vs NDC
     std::atomic<bool> neuralRenderingEnabled_{false};
+
+    // Frame rate limiter (0 = unlimited, default 120 as requested)
+    std::atomic<int> maxFps_{120};
 };
 
 } // namespace whiteout::flakes::renderer
