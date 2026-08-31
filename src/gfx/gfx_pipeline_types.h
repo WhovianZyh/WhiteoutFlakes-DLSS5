@@ -86,7 +86,7 @@ enum class BlendOp { Add, Subtract };
 enum class Filter { Point, Linear };
 enum class AddressMode { Wrap, Clamp, Mirror };
 
-enum class ShaderStage { Vertex, Hull, Domain, Pixel, Compute };
+enum class ShaderStage { Vertex = 0, Pixel = 1, Compute = 2, Hull = 3, Domain = 4 };
 
 struct BufferDesc {
     u64 size = 0;
