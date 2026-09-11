@@ -8,6 +8,11 @@
   A rendering library for Warcraft III assets — classic and Reforged.
 </p>
 
+<p align="center">
+  <b>Fork edition</b> — pause, parts panel, orbit camera, PN-Triangle tessellation,<br>
+  CAS sharpening, DLSS5 feed and an FPS limiter, on top of upstream <code>v1.5.0</code>.
+</p>
+
 ---
 
 WhiteoutFlakes is a modular real-time renderer that reads native Warcraft III
@@ -16,6 +21,42 @@ particle emitters, ribbons, splats, attachments, camera presets, day/night
 cycle, …) and draws it through whichever graphics backend the platform
 supports. The same library powers a standalone viewer, a 3ds Max preview
 plugin, and any host that links against `WhiteoutFlakesLib`.
+
+> **Fork notice** — this repository is a fork of
+> [FernandoS27/WhiteoutFlakes](https://github.com/FernandoS27/WhiteoutFlakes),
+> rebased onto upstream tag [`v1.5.0`](https://github.com/FernandoS27/WhiteoutFlakes/releases/tag/v1.5.0)
+> (`02abea8`). Development happens on the default branch
+> `feature/dlss5-pn-triangle` (see [Branches](#branches)). Everything upstream
+> ships with is intact — this fork only adds.
+
+## What this fork adds
+
+| Feature | Notes |
+| --- | --- |
+| **Pause** | `Space` freezes the whole scene; UI localized in 11 languages. |
+| **Parts panel** | Per-geoset visibility toggles (View → Parts Panel) — hide armor, weapons or any block at runtime, no model edits needed. |
+| **Bloom / FXAA / SMAA** | NVIDIA FXAA 3.11 and SMAA (iryoku 2013), applied pre-tonemap on HDR color; FXAA and SMAA are mutually exclusive, Bloom stacks on top. |
+| **CAS sharpening** | AMD FidelityFX CAS v1.3 (MIT), HDR path — runs after bloom/AA and before tonemap; toggle + 0–1 sharpness, persisted. |
+| **Orbit camera** | Manual / Slow / Medium / Fast (0.12 / 0.30 / 0.65 rad/s), camera-orbit or model-rotate, controlled from the toolbar and settings window, persisted in `WhiteoutFlakes.ini`. |
+| **Orbit capture export** | One menu item renders a 360° turntable — 120 frames @ 30 fps after a 10 s warmup — straight to a folder you pick. |
+| **PN-Triangle tessellation** | Off / ×2 / ×4 / ×8 / **Adaptive** (600/1200/2400 world-unit distance tiers); D3D11 hull/domain shaders compiled at runtime — view-space HS input feeding a world-space Bezier domain shader, so clipping and silhouettes stay correct while curvature gets smoothed. |
+| **DLSS5 neural rendering feed** *(experimental, D3D11)* | ReShade 6.8 depth + LumeniteFX motion vectors → DLSS5 feed → NVIDIA DLAA. The runtime components (ReShade `dxgi.dll`, `dlss5-feed.addon64`, `nvngx_dlss*.dll`) are **not redistributed** in this repo; enable via `NeuralRenderingEnabled` in `WhiteoutFlakes.ini`. |
+| **FPS limiter** | Unlimited / 30 / 60 / 120 / 144 / 240 (default 120), enforced in the main loop. |
+
+### Hotkeys
+
+Applied on the next frame, no restart, persisted to the INI.
+
+| Key | Action |
+| --- | --- |
+| `Space` | Pause / resume |
+| `F1` | Cycle PN mode: Off → ×2 → ×4 → ×8 → Adaptive |
+| `F2` | Cycle anisotropic filtering: 1 / 2 / 4 / 8 / 16 |
+| `F3` | Toggle CAS sharpening |
+| `F4` | Cycle AA: Off → FXAA → SMAA → Off |
+| `F5` | Toggle Bloom |
+| `F6` | Cycle mip bias: −0.6 / −0.3 / 0.0 |
+| hold `Tab` | A/B compare — original image (AF / CAS / PN / AA off) |
 
 ## Screenshots
 
@@ -67,7 +108,7 @@ plugin, and any host that links against `WhiteoutFlakesLib`.
 | Backend | Platform | Notes |
 | --- | --- | --- |
 | D3D12   | Windows | Default on Windows. |
-| D3D11   | Windows | Fallback for older drivers. |
+| D3D11   | Windows | Fallback for older drivers; the PN-Triangle and DLSS5 paths in this fork target D3D11. |
 | Vulkan  | Windows / Linux / macOS | macOS via MoltenVK; primary backend on Linux. |
 | Metal   | macOS   | Native backend — default on macOS. |
 | WebGPU  | Browser | Emscripten + emdawnwebgpu; powers the web viewer. |
@@ -104,6 +145,15 @@ cmake --build build --config Release --target WhiteoutFlakesStandalone
 
 The standalone viewer lands at `build/standalone/Release/WhiteoutFlakes.exe`.
 
+Notes from this fork's Windows development (VS 2022 Build Tools):
+
+- Compile with `/utf-8` — sources and build paths carry non-ASCII text.
+- `NOMINMAX` must be defined before including `d3dcompiler.h`, or macro
+  pollution of `std::max` breaks `render_pipeline.cpp`.
+- The development configuration targets D3D11/D3D12 and keeps the Vulkan
+  backend disabled, but header-only Vulkan-Headers must still be reachable
+  for the build.
+
 ### Web viewer (Emscripten / WebGPU)
 
 ```
@@ -139,6 +189,17 @@ viewer at it.
 | `WDX_ENABLE_IMGUI`             | `ON`  | Engine-side BLS-backed Dear ImGui adapter + GLFW/Win32 frontends. |
 | `WDX_BUILD_MAX_PLUGIN`         | `OFF` | Build the 3ds Max plugin (Windows only; needs `-DMAX_VERSION=<year>`). |
 | `WDX_BUILD_CASC_SERVER`        | `OFF` | Build `wf_casc_server` — local dev replacement for Hive's CASC delivery. |
+
+## Branches
+
+| Branch | Contents |
+| --- | --- |
+| `feature/dlss5-pn-triangle` *(default)* | Active development — the baseline below plus PN-Triangle tessellation, the DLSS5 feed, orbit camera + capture, CAS, the FPS limiter and real-time hotkeys. |
+| `main` | Baseline: upstream `v1.5.0` (`02abea8`) + vendored externals + the first wave of viewer customizations (pause / parts panel / bloom / FXAA / SMAA). |
+
+Unlike upstream — which fetches `externals/` as submodules — the submodule
+contents are committed in-tree in this fork, so a plain `git clone` (no
+`--recursive`) is enough to build.
 
 ## Packaging
 
@@ -182,8 +243,9 @@ packaging/      Linux .desktop + macOS Info.plist template.
 
 ## Status
 
-Active development. The renderer is feature-complete for classic and
-Reforged MDX content.
+Active development on the default branch. The renderer is feature-complete
+for classic and Reforged MDX content; the fork's rendering experiments
+(PN-Triangle, DLSS5) target D3D11.
 
 ## License
 
@@ -191,7 +253,8 @@ See [`LICENSE`](LICENSE) for project terms and
 [`LICENSE-AI.md`](LICENSE-AI.md) for the AI-tooling disclosure.
 WhiteoutFlakes bundles a number of third-party libraries under their own
 licenses; consult each submodule under [`externals/`](externals/) for
-details.
+details. This fork carries the same BSD-3-Clause license; all fork-specific
+changes are likewise distributed under BSD-3-Clause.
 
 > *Warcraft III is a trademark of Blizzard Entertainment, Inc.
 > WhiteoutFlakes is an independent project not affiliated with or endorsed
