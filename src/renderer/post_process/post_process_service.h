@@ -93,8 +93,33 @@ public:
     // shader/PSO state isn't ready yet.
     void RunBloom(gfx::IGFXCommandList* cmd, const RenderTarget& target);
 
+    // One frame's FXAA on `target.hdrColor`:
+    //   1. FXAA: hdrColor → bloomScratchA (edge-aware neighbourhood blend).
+    //   2. Blit: bloomScratchA → hdrColor.
+    // Shares the bloom scratch buffers — call AFTER RunBloom in the frame
+    // (both are sequential HDR passes over the same two textures). Runs on
+    // linear HDR values; FXAA's luma thresholds are relative so no range
+    // conversion is needed. No-op when unavailable (missing shader/PSO) or
+    // when the scratch/HDR targets are missing.
+    void RunFxaa(gfx::IGFXCommandList* cmd, const RenderTarget& target);
+
+    // One frame's SMAA 1x (official iryoku implementation) on
+    // `target.hdrColor` — three passes, same HDR position as RunFxaa:
+    //   1. Color edge detection: hdrColor → smaaEdges_ (RGBA8, rg used).
+    //   2. Blending weight calculation: smaaEdges_ + embedded areaTex/
+    //      searchTex → smaaBlend_ (RGBA8).
+    //   3. Neighborhood blending: hdrColor + smaaBlend_ → bloomScratchA.
+    //   4. Blit: bloomScratchA → hdrColor.
+    // Owns its two full-res LDR targets (recreated when the frame size
+    // changes) and the point sampler the search paths need. Call AFTER
+    // RunBloom (shares bloomScratchA). No-op when unavailable.
+    void RunSmaa(gfx::IGFXCommandList* cmd, const RenderTarget& target);
+
 private:
     void EnsurePsos(gfx::Format hdrFmt);
+    // SMAA's two full-res LDR scratch targets — created/recreated lazily so
+    // the service stays self-contained (no RenderTarget struct changes).
+    void EnsureSmaaTargets(i32 w, i32 h);
     void PackBloomExtractCb();
     void PackBloomCombineCb();
     void PackBlurCb(bool horizontal, f32 invW, f32 invH);
@@ -118,23 +143,47 @@ private:
     //          no VB / input layout).
     //   blit — final scratch → hdrColor copy. Reuses the same
     //          `blit.slang` variants the frame-capture path loads.
+    //   fxaa — edge-aware antialiasing on hdrColor (reuses blurVs_ as
+    //          the fullscreen-triangle VS).
+    //   smaa — official iryoku SMAA 1x, three passes sharing blurVs_.
     gfx::ShaderHandle blurVs_ = gfx::ShaderHandle::Invalid;
     gfx::ShaderHandle blurPs_ = gfx::ShaderHandle::Invalid;
     gfx::ShaderHandle blitVs_ = gfx::ShaderHandle::Invalid;
     gfx::ShaderHandle blitPs_ = gfx::ShaderHandle::Invalid;
+    gfx::ShaderHandle fxaaPs_ = gfx::ShaderHandle::Invalid;
+    gfx::ShaderHandle smaaEdgePs_ = gfx::ShaderHandle::Invalid;
+    gfx::ShaderHandle smaaWeightsPs_ = gfx::ShaderHandle::Invalid;
+    gfx::ShaderHandle smaaBlendPs_ = gfx::ShaderHandle::Invalid;
 
     gfx::PipelineHandle extractPso_ = gfx::PipelineHandle::Invalid;
     gfx::PipelineHandle blurPso_ = gfx::PipelineHandle::Invalid;
     gfx::PipelineHandle combinePso_ = gfx::PipelineHandle::Invalid;
     gfx::PipelineHandle blitPso_ = gfx::PipelineHandle::Invalid;
+    gfx::PipelineHandle fxaaPso_ = gfx::PipelineHandle::Invalid;
+    gfx::PipelineHandle smaaEdgePso_ = gfx::PipelineHandle::Invalid;
+    gfx::PipelineHandle smaaWeightsPso_ = gfx::PipelineHandle::Invalid;
+    gfx::PipelineHandle smaaBlendPso_ = gfx::PipelineHandle::Invalid;
     gfx::Format psoHdrFmt_ = gfx::Format::Unknown;
 
     // PS slot 1 CBs (matches the engine + Wc3Shaders bindings).
     gfx::BufferHandle extractCb_ = gfx::BufferHandle::Invalid;
     gfx::BufferHandle combineCb_ = gfx::BufferHandle::Invalid;
     gfx::BufferHandle blurCb_ = gfx::BufferHandle::Invalid;
+    // FXAA texel-size + quality knobs (slot 0, gaussian_blur-style binding).
+    gfx::BufferHandle fxaaCb_ = gfx::BufferHandle::Invalid;
+    // SMAA rtMetrics CB (slot 0) + its two full-res LDR scratch targets and
+    // the embedded iryoku lookup textures.
+    gfx::BufferHandle smaaCb_ = gfx::BufferHandle::Invalid;
+    gfx::TextureHandle smaaEdges_ = gfx::TextureHandle::Invalid;
+    gfx::TextureHandle smaaBlend_ = gfx::TextureHandle::Invalid;
+    i32 smaaTargetsW_ = 0;
+    i32 smaaTargetsH_ = 0;
+    gfx::TextureHandle areaTex_ = gfx::TextureHandle::Invalid;
+    gfx::TextureHandle searchTex_ = gfx::TextureHandle::Invalid;
     gfx::BufferHandle spriteVb_ = gfx::BufferHandle::Invalid;
     gfx::SamplerHandle linearSampler_ = gfx::SamplerHandle::Invalid;
+    // Point-clamp sampler — SMAA's search/area lookups sample texel centers.
+    gfx::SamplerHandle pointSampler_ = gfx::SamplerHandle::Invalid;
 
     BloomParams params_;
     bool shadersReady_ = false;

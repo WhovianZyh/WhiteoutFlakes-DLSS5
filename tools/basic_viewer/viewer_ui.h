@@ -32,6 +32,10 @@ private:
     // button. Selecting a tab activates that document; closing it unloads it.
     void BuildTabBar();
     void BuildSettingsWindow();
+    // Live geoset visibility panel for the focused model (View > Parts Panel):
+    // lists the MDX geoset names with checkboxes, writing Actor::hiddenGeosets
+    // which BuildDrawLists consults on the next frame.
+    void BuildPartsWindow();
     void BuildViewCubeWidget();
     // Renders the deferred Save As options modal (MDL dialect + texture export)
     // when a model save is pending. No-op otherwise.
@@ -48,6 +52,7 @@ private:
 
     bool settingsOpen_ = false;
     bool showViewCube_ = true;    // View > View Cube toggle
+    bool showParts_ = false;      // View > Parts Panel toggle
     bool showLogConsole_ = false; // Debug > Log Console toggle
 
     // Save As state. `pendingSavePath_` is non-empty only between the user

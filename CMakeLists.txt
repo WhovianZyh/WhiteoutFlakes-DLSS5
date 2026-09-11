@@ -243,6 +243,19 @@ set(SHADER_ENTRIES
     # on the engine's shipped gaussianblur.bls being staged.
     "gaussian_blur.slang|vsBlur|vertex|kGaussianBlurVS"
     "gaussian_blur.slang|psBlur|fragment|kGaussianBlurPS"
+    # FXAA antialiasing (post-process). PostProcessService runs this once
+    # per HD frame after bloom and before tonemap, ping-ponging through
+    # bloomScratchA + the shared blit back to hdrColor. Pixel-shader only
+    # — the compute/UAV-free stand-in for the planned CMAA pass.
+    "fxaa.slang|vsFxaa|vertex|kFxaaVS"
+    "fxaa.slang|psFxaa|fragment|kFxaaPS"
+    # SMAA 1x antialiasing (official iryoku implementation, 3 pixel-shader
+    # passes: color edge detection → blending weights → neighborhood blend;
+    # lookup textures embedded from AreaTex.h/SearchTex.h). Same position as
+    # FXAA: on hdrColor after bloom, before tonemap.
+    "smaa.slang|psSmaaEdge|fragment|kSmaaEdgePS"
+    "smaa.slang|psSmaaWeights|fragment|kSmaaWeightsPS"
+    "smaa.slang|psSmaaBlend|fragment|kSmaaBlendPS"
     # NOTE: depth of field has no custom shader entry — DofService runs the
     # shipped WC3 depthoffield.bls (GxShaderID DepthOfField) through the BLS
     # shader cache, and reuses the embedded blit (kBlit*) for the round-trip.
@@ -1142,10 +1155,17 @@ add_library(WhiteoutFlakesLib STATIC
     src/io/event_data.cpp
     src/io/slk.cpp
     src/io/texture_image_usage.cpp
-    src/io/storage_browser.cpp
     src/public_api/renderer_api.cpp
-    src/public_api/storage_browser_api.cpp
 )
+
+# Storage browser walks CASC/MPQ/the local filesystem — none of which the
+# web build has (WHITEOUT_ENABLE_CASC is forced OFF above).
+if(NOT EMSCRIPTEN)
+    target_sources(WhiteoutFlakesLib PRIVATE
+        src/io/storage_browser.cpp
+        src/public_api/storage_browser_api.cpp
+    )
+endif()
 
 if(WDX_ENABLE_IMGUI)
     target_sources(WhiteoutFlakesLib PRIVATE

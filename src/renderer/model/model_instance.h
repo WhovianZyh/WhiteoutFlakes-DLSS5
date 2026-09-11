@@ -115,6 +115,15 @@ struct Actor {
 
     f32 parentVisibility = 1.0f;
 
+    // ---- Parts panel (host UI) ----
+    // Per-geoset visibility override, indexed by GPUGeoset::geosetId (== the
+    // source model's geoset index — gpuGeosets are staged in that order).
+    // Owned by the host UI (the viewer's parts panel); BuildDrawLists skips
+    // geosets whose entry is set. Absent or false = visible. The standalone
+    // viewer is single-threaded (UI + render on the main thread), so no
+    // synchronization is needed.
+    std::vector<bool> hiddenGeosets;
+
     std::shared_ptr<ModelTemplate> sourceTemplate;
 
     RenderModel render;

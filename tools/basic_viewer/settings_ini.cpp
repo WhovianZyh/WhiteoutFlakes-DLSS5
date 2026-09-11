@@ -462,6 +462,16 @@ void LoadSettingsIni(RenderService& service, bool& loopNonLoopingPolicy, bool& f
         if (ParseBool(*s, v))
             service.Settings().SetBloomEnabled(v);
     }
+    if (auto* s = ini.Get(KeyOf("FxaaEnabled"))) {
+        bool v = false;
+        if (ParseBool(*s, v))
+            service.Settings().SetFxaaEnabled(v);
+    }
+    if (auto* s = ini.Get(KeyOf("SmaaEnabled"))) {
+        bool v = false;
+        if (ParseBool(*s, v))
+            service.Settings().SetSmaaEnabled(v);
+    }
     if (auto* s = ini.Get(KeyOf("BloomThreshold"))) {
         f32 v = 1.0f;
         if (ParseFloat(*s, v))
@@ -596,6 +606,8 @@ void SaveSettingsIni(const RenderService& service, bool loopNonLoopingPolicy, bo
     ini.Set(KeyOf("AoQuality"), ToString(static_cast<i32>(service.Settings().AoQuality())));
     ini.Set(KeyOf("AoBentBoost"), FloatToString(service.Settings().AoBentBoost()));
     ini.Set(KeyOf("BloomEnabled"), service.Settings().BloomEnabled() ? "1" : "0");
+    ini.Set(KeyOf("FxaaEnabled"), service.Settings().FxaaEnabled() ? "1" : "0");
+    ini.Set(KeyOf("SmaaEnabled"), service.Settings().SmaaEnabled() ? "1" : "0");
     ini.Set(KeyOf("BloomThreshold"), FloatToString(service.Settings().BloomThreshold()));
     ini.Set(KeyOf("BloomIntensity"), FloatToString(service.Settings().BloomIntensity()));
     ini.Set(KeyOf("BloomSaturation"), FloatToString(service.Settings().BloomSaturation()));

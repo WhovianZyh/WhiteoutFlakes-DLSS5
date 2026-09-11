@@ -153,6 +153,8 @@ void ViewerUI::BuildFrame() {
     BuildTabBar();
     if (showViewCube_)
         BuildViewCubeWidget();
+    if (showParts_)
+        BuildPartsWindow();
     if (settingsOpen_)
         BuildSettingsWindow();
     BuildSaveOptionsPopup();
@@ -169,6 +171,56 @@ void ViewerUI::BuildViewCubeWidget() {
     const f32 stripH = ImGui::GetFrameHeight() + 8.0f;
     const f32 topOffset = stripH + (app_.DocumentCount() > 0 ? stripH : 0.0f);
     tools::DrawViewCube(app_.Service().Scene().Camera(), topOffset);
+}
+
+void ViewerUI::BuildPartsWindow() {
+    ImGui::SetNextWindowSize(ImVec2(340, 440), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin(i18n::tr("parts.title"), &showParts_)) {
+        ImGui::End();
+        return;
+    }
+
+    model::Actor* focus = app_.FocusActorPtr();
+    const std::shared_ptr<model::ModelTemplate>& tmpl =
+        focus ? focus->sourceTemplate : nullptr;
+    if (!focus || !tmpl || !tmpl->adapter || focus->Render().gpuGeosets.empty()) {
+        ImGui::TextUnformatted(i18n::tr("parts.no_model"));
+        ImGui::End();
+        return;
+    }
+
+    const auto& gpuGeos = focus->Render().gpuGeosets;
+    const auto& srcGeos = tmpl->adapter->SourceModel().geosets;
+    std::vector<bool>& hidden = focus->hiddenGeosets;
+    if (hidden.size() != gpuGeos.size())
+        hidden.assign(gpuGeos.size(), false);
+
+    if (ImGui::Button(i18n::tr("parts.show_all")))
+        std::fill(hidden.begin(), hidden.end(), false);
+    ImGui::SameLine();
+    if (ImGui::Button(i18n::tr("parts.hide_all")))
+        std::fill(hidden.begin(), hidden.end(), true);
+    ImGui::Separator();
+
+    for (i32 i = 0; i < static_cast<i32>(gpuGeos.size()); ++i) {
+        const u32 gid = static_cast<u32>(gpuGeos[i].geosetId);
+        if (gid >= hidden.size())
+            continue;
+        // Prefer the MDX lodName; unnamed geosets (lodName empty in some
+        // packs) fall back to their source index so the user can toggle
+        // them by trial. ## suffix keeps ImGui IDs unique per geoset.
+        std::string name;
+        if (gid < srcGeos.size() && !srcGeos[gid].lodName.empty())
+            name = srcGeos[gid].lodName;
+        else
+            name = std::string(i18n::tr("parts.unnamed")) + " #" + std::to_string(gid);
+        name += "##";
+        name += std::to_string(gid);
+        bool visible = !hidden[gid];
+        if (ImGui::Checkbox(name.c_str(), &visible))
+            hidden[gid] = !visible;
+    }
+    ImGui::End();
 }
 
 void ViewerUI::OpenFileDialog() {
@@ -681,6 +733,7 @@ void ViewerUI::BuildMenuBar() {
             dfChanged |= ImGui::MenuItem(i18n::tr("menu.view.ribbons"), nullptr, &df.showRibbons);
             dfChanged |= ImGui::MenuItem(i18n::tr("menu.view.events"), nullptr, &df.showEvents);
             ImGui::MenuItem(i18n::tr("menu.view.viewcube"), nullptr, &showViewCube_);
+            ImGui::MenuItem(i18n::tr("menu.view.parts"), nullptr, &showParts_);
 
             ImGui::Separator();
             {
@@ -688,6 +741,36 @@ void ViewerUI::BuildMenuBar() {
                 bool reforged = app_.ForceHd();
                 if (ImGui::MenuItem(i18n::tr("menu.view.reforged"), nullptr, &reforged)) {
                     app_.SetForceHd(reforged);
+                    SaveIni(app_);
+                }
+            }
+            {
+                // HDR bloom glow (HD pipeline only; SD models never bloom).
+                bool bloom = svc.Settings().BloomEnabled();
+                if (ImGui::MenuItem(i18n::tr("menu.view.bloom"), nullptr, &bloom)) {
+                    svc.Settings().SetBloomEnabled(bloom);
+                    SaveIni(app_);
+                }
+            }
+            {
+                // FXAA — screen-space antialiasing on the HDR scene colour.
+                bool fxaa = svc.Settings().FxaaEnabled();
+                if (ImGui::MenuItem(i18n::tr("menu.view.fxaa"), nullptr, &fxaa)) {
+                    svc.Settings().SetFxaaEnabled(fxaa);
+                    // The two AA toggles are mutually exclusive — enabling
+                    // one turns the other off (stacking them just blurs).
+                    if (fxaa)
+                        svc.Settings().SetSmaaEnabled(false);
+                    SaveIni(app_);
+                }
+            }
+            {
+                // SMAA 1x — pattern-based antialiasing (iryoku official).
+                bool smaa = svc.Settings().SmaaEnabled();
+                if (ImGui::MenuItem(i18n::tr("menu.view.smaa"), nullptr, &smaa)) {
+                    svc.Settings().SetSmaaEnabled(smaa);
+                    if (smaa)
+                        svc.Settings().SetFxaaEnabled(false);
                     SaveIni(app_);
                 }
             }
@@ -797,6 +880,26 @@ void ViewerUI::BuildToolbar() {
     }
 
     RenderService& svc = app_.Service();
+
+    // ---- Playback pause/resume (Space) ----
+    // The model lives in the active document's scene (each document owns one),
+    // so pause THAT scene — not the default one.
+    {
+        auto& scene = svc.SceneAt(app_.ActiveSceneId());
+        const bool paused =
+            scene.GetPlaybackState() != whiteout::flakes::PlaybackState::Playing;
+        if (ImGui::IsKeyPressed(ImGuiKey_Space, false) && !ImGui::IsAnyItemActive()) {
+            scene.SetPlaybackState(paused ? whiteout::flakes::PlaybackState::Playing
+                                          : whiteout::flakes::PlaybackState::Paused);
+        }
+        const bool nowPaused =
+            scene.GetPlaybackState() != whiteout::flakes::PlaybackState::Playing;
+        if (ImGui::Button(nowPaused ? i18n::tr("toolbar.play") : i18n::tr("toolbar.pause"))) {
+            scene.SetPlaybackState(nowPaused ? whiteout::flakes::PlaybackState::Playing
+                                             : whiteout::flakes::PlaybackState::Paused);
+        }
+        ImGui::SameLine();
+    }
 
     // ---- Animation sequence ----
     const auto& seqs = app_.SequenceNames();

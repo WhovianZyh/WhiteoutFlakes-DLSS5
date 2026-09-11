@@ -68,6 +68,11 @@ CollectedDrawLists BuildDrawLists(
             const auto& geo = mi->render.gpuGeosets[i];
             if (!GeosetPassesLod(geo.lod, modelLod) || !GeosetDrawable(geo))
                 continue;
+            // Host parts panel: skip geosets the user hid. Flags are indexed
+            // by geosetId, not by loop position; absent entries = visible.
+            const u32 gid = static_cast<u32>(geo.geosetId);
+            if (gid < mi->hiddenGeosets.size() && mi->hiddenGeosets[gid])
+                continue;
 
             const GeosetClass gc = ClassifyGeoset(view, geo);
             if (!gc.visible)

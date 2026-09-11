@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: BSD-3-Clause
+[workspace]
+resolver = "2"
+members = ["whiteout"]
+
+# Version policy: the crate version tracks the C++ library it wraps, not
+# the binding's own churn. The library is pre-1.0, so the crate stays 0.x
+# and a breaking C++ API change bumps the minor. Once the library tags 1.0
+# the crate follows with 1.0 and normal semver.
+[workspace.package]
+version      = "0.1.7"
+edition      = "2021"
+rust-version = "1.70"
+license      = "BSD-3-Clause"
+authors      = ["Fernando Sahmkow <fsahmkow27@gmail.com>"]
+repository   = "https://github.com/FernandoS27/WhiteoutLib"

@@ -195,6 +195,26 @@ public:
         bloomSaturation_.store(bits);
     }
 
+    // ---- FXAA (HD-only) ----
+    // Master enable. Off ⇒ PostProcessService::RunFxaa is a no-op. Runs on
+    // hdrColor between bloom and tonemap; no compute/UAV needed.
+    bool FxaaEnabled() const {
+        return fxaaEnabled_.load();
+    }
+    void SetFxaaEnabled(bool on) {
+        fxaaEnabled_.store(on);
+    }
+
+    // ---- SMAA 1x (HD-only) ----
+    // Same position as FXAA; the viewer UI treats the two antialiasing
+    // toggles as mutually exclusive (enabling one disables the other).
+    bool SmaaEnabled() const {
+        return smaaEnabled_.load();
+    }
+    void SetSmaaEnabled(bool on) {
+        smaaEnabled_.store(on);
+    }
+
     // ---- Depth of field (HD-only) ----
     // Master enable. Off (and a focal distance of 0) ⇒ DofService::Run is a
     // no-op. Mirrors WC3's per-camera GetDepthOfFieldEnabled gate.
@@ -375,6 +395,13 @@ private:
     std::atomic<u32> bloomThreshold_{0x3F800000u}; // 1.0f
     std::atomic<u32> bloomIntensity_{0x3FA00000u}; // 1.25f
     std::atomic<u32> bloomSaturation_{0x3F800000u}; // 1.0f
+
+    // FXAA — off by default (pure look preference, toggled from the View
+    // menu and persisted via the ini).
+    std::atomic<bool> fxaaEnabled_{false};
+
+    // SMAA 1x — off by default, same UI/ini story as FXAA.
+    std::atomic<bool> smaaEnabled_{false};
 
     // Depth of field — off by default (the host supplies a focal distance).
     // Defaults mirror WC3: maxBlurSize=10, radiusScale=1, focusScale=1.

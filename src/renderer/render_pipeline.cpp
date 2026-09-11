@@ -1991,6 +1991,30 @@ void RenderPipeline::RenderViewport(const Viewport& vp) {
         }
     }
 
+    // FXAA antialiasing — after bloom (shares its scratch buffers), before
+    // tonemap, so the tonemap/capture/present paths stay untouched.
+    if (useHdr) {
+        if (auto* pp = rs_.GetPostProcessService()) {
+            if (rs_.Settings().FxaaEnabled()) {
+                WDX_CPU_ZONE("FXAA");
+                WDX_GPU_ZONE(cmd, "FXAA");
+                pp->RunFxaa(cmd, target);
+            }
+        }
+    }
+
+    // SMAA 1x antialiasing — same position and scratch sharing as FXAA (the
+    // host UI treats the two toggles as mutually exclusive).
+    if (useHdr) {
+        if (auto* pp = rs_.GetPostProcessService()) {
+            if (rs_.Settings().SmaaEnabled()) {
+                WDX_CPU_ZONE("SMAA");
+                WDX_GPU_ZONE(cmd, "SMAA");
+                pp->RunSmaa(cmd, target);
+            }
+        }
+    }
+
     if (sceneToHdr) {
         WDX_CPU_ZONE("Tonemap");
         WDX_GPU_ZONE(cmd, "Tonemap");

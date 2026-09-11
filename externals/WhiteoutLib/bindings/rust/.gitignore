@@ -1,0 +1,5 @@
+target/
+Cargo.lock
+
+# Staged by scripts/pack-rust.ps1 — a packaging artefact, not source.
+whiteout/native/
