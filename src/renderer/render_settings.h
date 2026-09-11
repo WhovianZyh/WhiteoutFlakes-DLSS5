@@ -16,6 +16,7 @@
 #include "whiteout/flakes/gfx_types.h" // gfx::GfxApi
 #include "whiteout/flakes/types.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <string>
@@ -215,6 +216,20 @@ public:
         smaaEnabled_.store(on);
     }
 
+    // ---- CAS sharpening (HD-only, after bloom/AA, before tonemap) ----
+    bool CasEnabled() const {
+        return casEnabled_.load();
+    }
+    void SetCasEnabled(bool on) {
+        casEnabled_.store(on);
+    }
+    f32 CasSharpness() const {
+        return loadF32(casSharpness_);
+    }
+    void SetCasSharpness(f32 v) {
+        storeF32(casSharpness_, std::clamp(v, 0.0f, 1.0f));
+    }
+
     // ---- Depth of field (HD-only) ----
     // Master enable. Off (and a focal distance of 0) ⇒ DofService::Run is a
     // no-op. Mirrors WC3's per-camera GetDepthOfFieldEnabled gate.
@@ -362,6 +377,15 @@ public:
         default: return 1.0f;
         }
     }
+    // Adaptive: distance in world units (camera eye -> target). 600/1200/2400 tiers.
+    f32 PnAdaptiveFactor(f32 dist) const {
+        if (GetPnMode() != PnMode::Adaptive)
+            return PnTessFactor();
+        if (dist < 600.0f) return 8.0f;
+        if (dist < 1200.0f) return 4.0f;
+        if (dist < 2400.0f) return 2.0f;
+        return 1.0f;
+    }
     f32 PnCreaseThreshold() const {
         return loadF32(pnCreaseThreshold_);
     }
@@ -410,6 +434,19 @@ public:
         maxFps_.store(fps);
     }
 
+    // ---- Anisotropic filtering (material samplers) ----
+    // 1=off, 2/4/8/16x. Applied to SamplerAssetManager's WrapVariant/LinearWrap.
+    u32 GetAnisotropy() const {
+        return anisotropy_.load();
+    }
+    void SetAnisotropy(u32 v) {
+        if (v != 1 && v != 2 && v != 4 && v != 8 && v != 16)
+            v = 4;
+        anisotropy_.store(v);
+    }
+    f32 GetMipBias() const { return loadF32(mipBias_); }
+    void SetMipBias(f32 v) { storeF32(mipBias_, std::clamp(v, -1.0f, 0.5f)); }
+
     // ---- Preferred GFX device ----
     // Exact-match name of the physical adapter the host wants the
     // selected backend to open (compared verbatim against the names
@@ -440,7 +477,7 @@ private:
     }
 
     // Display flags — plain bools; readers tolerate single-byte tearing.
-    bool showGrid_ = true;
+    bool showGrid_ = false;
     bool showParticles_ = true;
     bool showRibbons_ = true;
     bool showCollisions_ = false;
@@ -483,6 +520,10 @@ private:
 
     // SMAA 1x — off by default, same UI/ini story as FXAA.
     std::atomic<bool> smaaEnabled_{false};
+
+    // CAS — off by default (user opts in; pairs well with AF + PN)
+    std::atomic<bool> casEnabled_{false};
+    std::atomic<u32> casSharpness_{0x3ecccccd}; // 0.4f
 
     // Depth of field — off by default (the host supplies a focal distance).
     // Defaults mirror WC3: maxBlurSize=10, radiusScale=1, focusScale=1.
@@ -548,6 +589,10 @@ private:
 
     // Frame rate limiter (0 = unlimited, default 120 as requested)
     std::atomic<int> maxFps_{120};
+
+    // Anisotropic filtering, default 4x (best cost/quality for WC3 low-poly)
+    std::atomic<u32> anisotropy_{4};
+    std::atomic<u32> mipBias_{0xbd99999a}; // -0.3f
 };
 
 } // namespace whiteout::flakes::renderer

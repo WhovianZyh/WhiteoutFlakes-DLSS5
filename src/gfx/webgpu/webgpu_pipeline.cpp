@@ -595,7 +595,7 @@ SamplerHandle WebGPUDevice::CreateSampler(const SamplerDesc& desc) {
     sd.mipmapFilter = ToWgpuMipFilter(desc.minFilter);
     sd.lodMinClamp = 0.0f;
     sd.lodMaxClamp = 32.0f;
-    sd.maxAnisotropy = 1;
+    sd.maxAnisotropy = desc.comparison ? 1 : std::clamp<u32>(desc.maxAnisotropy, 1, 16);
     if (desc.comparison)
         sd.compare = ToWgpuCompare(desc.comparisonFunc);
 

@@ -1132,13 +1132,15 @@ void D3D12Device::Destroy(PipelineHandle h) {
 }
 
 SamplerHandle D3D12Device::CreateSampler(const SamplerDesc& desc) {
+    const u32 aniso = desc.comparison ? 1 : std::clamp(desc.maxAnisotropy, 1u, 16u);
     D3D12_SAMPLER_DESC sd{};
-    sd.Filter = desc.comparison ? ToD3D12FilterComparison(desc.minFilter, desc.magFilter)
-                                : ToD3D12Filter(desc.minFilter, desc.magFilter);
+    sd.Filter = desc.comparison ? ToD3D12FilterComparison(desc.minFilter, desc.magFilter, aniso)
+                                : ToD3D12Filter(desc.minFilter, desc.magFilter, aniso);
     sd.AddressU = ToD3D12(desc.addressU);
     sd.AddressV = ToD3D12(desc.addressV);
     sd.AddressW = ToD3D12(desc.addressW);
-    sd.MaxAnisotropy = 1;
+    sd.MaxAnisotropy = aniso;
+    sd.MipLODBias = std::clamp(desc.mipLodBias, -1.0f, 0.5f);
     sd.ComparisonFunc =
         desc.comparison ? ToD3D12(desc.comparisonFunc) : D3D12_COMPARISON_FUNC_NEVER;
     sd.MaxLOD = D3D12_FLOAT32_MAX;

@@ -115,6 +115,12 @@ public:
     // RunBloom (shares bloomScratchA). No-op when unavailable.
     void RunSmaa(gfx::IGFXCommandList* cmd, const RenderTarget& target);
 
+    // One frame's CAS (FidelityFX Contrast Adaptive Sharpening) on
+    // `target.hdrColor`: hdrColor → bloomScratchA → hdrColor. Runs on
+    // linear HDR after bloom/AA, before tonemap. Shares bloomScratchA
+    // — call AFTER RunSmaa/Fxaa.
+    void RunCas(gfx::IGFXCommandList* cmd, const RenderTarget& target, f32 sharpness);
+
 private:
     void EnsurePsos(gfx::Format hdrFmt);
     // SMAA's two full-res LDR scratch targets — created/recreated lazily so
@@ -151,6 +157,8 @@ private:
     gfx::ShaderHandle blitVs_ = gfx::ShaderHandle::Invalid;
     gfx::ShaderHandle blitPs_ = gfx::ShaderHandle::Invalid;
     gfx::ShaderHandle fxaaPs_ = gfx::ShaderHandle::Invalid;
+    gfx::ShaderHandle casVs_ = gfx::ShaderHandle::Invalid;
+    gfx::ShaderHandle casPs_ = gfx::ShaderHandle::Invalid;
     gfx::ShaderHandle smaaEdgePs_ = gfx::ShaderHandle::Invalid;
     gfx::ShaderHandle smaaWeightsPs_ = gfx::ShaderHandle::Invalid;
     gfx::ShaderHandle smaaBlendPs_ = gfx::ShaderHandle::Invalid;
@@ -163,6 +171,7 @@ private:
     gfx::PipelineHandle smaaEdgePso_ = gfx::PipelineHandle::Invalid;
     gfx::PipelineHandle smaaWeightsPso_ = gfx::PipelineHandle::Invalid;
     gfx::PipelineHandle smaaBlendPso_ = gfx::PipelineHandle::Invalid;
+    gfx::PipelineHandle casPso_ = gfx::PipelineHandle::Invalid;
     gfx::Format psoHdrFmt_ = gfx::Format::Unknown;
 
     // PS slot 1 CBs (matches the engine + Wc3Shaders bindings).
@@ -171,6 +180,7 @@ private:
     gfx::BufferHandle blurCb_ = gfx::BufferHandle::Invalid;
     // FXAA texel-size + quality knobs (slot 0, gaussian_blur-style binding).
     gfx::BufferHandle fxaaCb_ = gfx::BufferHandle::Invalid;
+    gfx::BufferHandle casCb_ = gfx::BufferHandle::Invalid;
     // SMAA rtMetrics CB (slot 0) + its two full-res LDR scratch targets and
     // the embedded iryoku lookup textures.
     gfx::BufferHandle smaaCb_ = gfx::BufferHandle::Invalid;

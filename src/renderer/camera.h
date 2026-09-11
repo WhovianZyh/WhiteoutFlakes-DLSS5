@@ -30,7 +30,7 @@ public:
     static constexpr f32 kDefaultDistance = 350.0f;
     static constexpr f32 kMinPitch = -1.5607963f;
     static constexpr f32 kMaxPitch = 1.5607963f;
-    static constexpr f32 kMinDistance = 15.0f;
+    static constexpr f32 kMinDistance = 1.0f;
     static constexpr f32 kMaxDistance = 8000.0f;
     static constexpr f32 kFactorPitch = 0.02f;
     static constexpr f32 kFactorYaw = 0.02f;
@@ -40,7 +40,7 @@ public:
     static constexpr f32 kFactorRelMove = 500.0f;
 
     static constexpr f32 kDefaultFovDiagonal = 1.30f;
-    static constexpr f32 kDefaultNearZ = 1.0f;
+    static constexpr f32 kDefaultNearZ = 0.1f;
     static constexpr f32 kDefaultFarZ = 10000.0f;
 
     Camera() {

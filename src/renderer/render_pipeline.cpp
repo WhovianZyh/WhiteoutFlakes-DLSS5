@@ -1748,6 +1748,9 @@ void RenderPipeline::RenderViewport(const Viewport& vp) {
     // Apply any pending settings changes before drawing.
     if (rs_.Settings().ConsumeIblModeDirty())
         ApplyIblMode(rs_.Settings().GetIblMode());
+    // Anisotropic filtering + mip bias for low-poly texture clarity (material samplers)
+    rs_.Samplers().SetAnisotropy(rs_.Settings().GetAnisotropy());
+    rs_.Samplers().SetMipBias(rs_.Settings().GetMipBias());
 
     auto* cmd = impl_->gfx_->GetImmediateContext();
 
@@ -2147,6 +2150,18 @@ void RenderPipeline::RenderViewport(const Viewport& vp) {
         }
     }
 
+    // CAS sharpening — after AA, before tonemap. HDR linear (same trade-off
+    // as FXAA/SMAA). Pairs well with AF + PN for low-poly clarity.
+    if (useHdr) {
+        if (auto* pp = rs_.GetPostProcessService()) {
+            if (rs_.Settings().CasEnabled()) {
+                WDX_CPU_ZONE("CAS");
+                WDX_GPU_ZONE(cmd, "CAS");
+                pp->RunCas(cmd, target, rs_.Settings().CasSharpness());
+            }
+        }
+    }
+
     if (sceneToHdr) {
         WDX_CPU_ZONE("Tonemap");
         WDX_GPU_ZONE(cmd, "Tonemap");
@@ -2449,7 +2464,7 @@ public:
             reqLocal.extraRtvCount = 2;
         }
         reqLocal.dsvFormat = impl->depthStencilFormat_;
-        // PN-Triangle tessellation (Task 2)
+        // PN-Triangle tessellation (Task 2) — Adaptive uses camera distance
         {
             auto pnMode = rs_.Settings().GetPnMode();
             if (pnMode != RenderSettings::PnMode::Off) {
@@ -2457,7 +2472,12 @@ public:
                     reqLocal.hs = impl->pnHs_;
                     reqLocal.ds = impl->pnDs_;
                     reqLocal.tessEnabled = true;
-                    reqLocal.tessFactor = rs_.Settings().PnTessFactor();
+                    const f32 camDist = rs_.Pipeline().FrameCamera().GetDistance();
+                    f32 tf = rs_.Settings().PnAdaptiveFactor(camDist);
+                    // Clamp tessellation on large/maximized windows to avoid x16 blow-up
+                    if (rs_.Pipeline().Width() > 1920 || rs_.Pipeline().Height() > 1080)
+                        tf = std::min(tf, 2.0f);
+                    reqLocal.tessFactor = tf;
                 }
             }
         }
@@ -2472,7 +2492,13 @@ public:
                 float pad[2];
                 Matrix44f proj;
             } cb{};
-            cb.tessFactor = rs_.Settings().PnTessFactor();
+            {
+                const f32 camDist = rs_.Pipeline().FrameCamera().GetDistance();
+                f32 tf = rs_.Settings().PnAdaptiveFactor(camDist);
+                if (rs_.Pipeline().Width() > 1920 || rs_.Pipeline().Height() > 1080)
+                    tf = std::min(tf, 2.0f);
+                cb.tessFactor = tf;
+            }
             cb.crease = rs_.Settings().PnCreaseThreshold();
             cb.pad[0] = cb.pad[1] = 0;
             {
@@ -2889,7 +2915,7 @@ public:
                     matParams.DepthWriteEnabled() && matParams.ColorWriteEnabled();
                 req.dsvFormat = rs_.Pipeline().impl_->depthStencilFormat_;
                 req.lhClipSpace = true;
-                // PN-Triangle
+                // PN-Triangle Adaptive uses camera distance — clamp on large windows
                 {
                     auto pnMode = rs_.Settings().GetPnMode();
                     if (pnMode != RenderSettings::PnMode::Off) {
@@ -2897,7 +2923,11 @@ public:
                             req.hs = rs_.Pipeline().impl_->pnHs_;
                             req.ds = rs_.Pipeline().impl_->pnDs_;
                             req.tessEnabled = true;
-                            req.tessFactor = rs_.Settings().PnTessFactor();
+                            const f32 camDist = rs_.Pipeline().FrameCamera().GetDistance();
+                            f32 tf = rs_.Settings().PnAdaptiveFactor(camDist);
+                            if (rs_.Pipeline().Width() > 1920 || rs_.Pipeline().Height() > 1080)
+                                tf = std::min(tf, 2.0f);
+                            req.tessFactor = tf;
                         }
                     }
                 }
@@ -2912,7 +2942,13 @@ public:
                         float pad[2];
                         Matrix44f proj;
                     } cb{};
-                    cb.tessFactor = rs_.Settings().PnTessFactor();
+                    {
+                        const f32 camDist = rs_.Pipeline().FrameCamera().GetDistance();
+                        f32 tf = rs_.Settings().PnAdaptiveFactor(camDist);
+                        if (rs_.Pipeline().Width() > 1920 || rs_.Pipeline().Height() > 1080)
+                            tf = std::min(tf, 2.0f);
+                        cb.tessFactor = tf;
+                    }
                     cb.crease = rs_.Settings().PnCreaseThreshold();
                     cb.pad[0] = cb.pad[1] = 0;
                     {

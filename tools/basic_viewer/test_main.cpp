@@ -402,6 +402,11 @@ int main(int argc, char* argv[]) {
     i32 exportResH = 0;
     i32 exportCamera = -1; // -1 = free camera; >= 0 = model camera preset index
     std::filesystem::path exportFolder;
+    bool doOrbitCapture = false;
+    i32 orbitFrames = 120;
+    i32 orbitFps = 30;
+    f32 orbitWarmup = 10.0f;
+    std::filesystem::path orbitFolder;
 
 #if defined(_WIN32)
     constexpr const char* kBackendsHelp = "d3d11, d3d12, vulkan";
@@ -462,6 +467,13 @@ int main(int argc, char* argv[]) {
             exportResH = std::atoi(argv[++i]);
         } else if (std::strcmp(a, "--camera") == 0 && i + 1 < argc) {
             exportCamera = std::atoi(argv[++i]);
+        } else if (std::strcmp(a, "--orbit-capture") == 0 && i + 3 < argc) {
+            doOrbitCapture = true;
+            orbitFrames = std::atoi(argv[++i]);
+            orbitFps = std::atoi(argv[++i]);
+            orbitFolder = whiteout::flakes::io::FsPathFromUtf8(argv[++i]);
+        } else if (std::strcmp(a, "--orbit-warmup") == 0 && i + 1 < argc) {
+            orbitWarmup = static_cast<f32>(std::atof(argv[++i]));
         } else if (std::strcmp(a, "--headless-test") == 0) {
             headlessTest = true;
         } else if (std::strcmp(a, "--multiscene-test") == 0) {
@@ -472,7 +484,8 @@ int main(int argc, char* argv[]) {
             whiteout::flakes::gfx::SetWebGPUBackend(argv[++i]);
         } else if (std::strcmp(a, "--help") == 0 || std::strcmp(a, "-h") == 0) {
             std::cout << "Usage: WhiteoutFlakes [--backend " << kBackendsHelp
-                      << "] [--wgpu-backend d3d11|d3d12|vulkan|gl] [<mdx-path>]\n";
+                      << "] [--orbit-capture <frames> <fps> <folder> [--orbit-warmup <sec>] ]"
+                      << " [--wgpu-backend d3d11|d3d12|vulkan|gl] [<mdx-path>]\n";
             return 0;
         } else if (mdxPath.empty()) {
             mdxPath = whiteout::flakes::io::FsPathFromUtf8(a);
@@ -756,6 +769,34 @@ int main(int argc, char* argv[]) {
         // where ~RenderService destructs the gfx services after the device is
         // already gone (a pre-existing engine teardown-order issue the model
         // explorer + headless tests also _Exit past).
+        std::fflush(stdout);
+        std::fflush(stderr);
+        std::_Exit(0);
+    }
+    if (doOrbitCapture) {
+        for (i32 i = 0; i < 24 && !app.ShouldClose(); ++i) {
+            scene.Update(0.016f);
+            app.Tick(0.016f);
+        }
+        if (exportCamera >= 0) {
+            std::printf("[viewer] model has %zu camera preset(s); activating #%d\n",
+                        app.CameraPresets().size(), exportCamera);
+            app.ActivateCameraPreset(exportCamera);
+        }
+        whiteout::flakes::ViewerApp::OrbitCaptureParams params;
+        params.frames = orbitFrames;
+        params.fps = orbitFps;
+        params.format = exportFmt;
+        params.transparentBackground = exportTransparent;
+        params.captureUi = exportCaptureUi;
+        params.width = exportResW;
+        params.height = exportResH;
+        params.outputFolder = orbitFolder;
+        params.warmupSeconds = orbitWarmup;
+        app.RequestOrbitCapture(std::move(params));
+        scene.Update(0.016f);
+        app.Tick(0.016f); // runs orbit capture synchronously
+        app.Close();
         std::fflush(stdout);
         std::fflush(stderr);
         std::_Exit(0);

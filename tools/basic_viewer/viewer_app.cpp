@@ -191,6 +191,7 @@ bool ViewerApp::Open(i32 width, i32 height, gfx::GfxApi api) {
     // layer, which talks directly to d3d11 / d3d12 / vulkan.
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+    glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
 
     // The caller's width/height are logical (96-DPI) pixels — pre-scale them
     // for the primary monitor so a 1280x720 viewer doesn't shrink to a quarter
@@ -212,6 +213,7 @@ bool ViewerApp::Open(i32 width, i32 height, gfx::GfxApi api) {
         glfwTerminate();
         return false;
     }
+    glfwMaximizeWindow(window_);
     glfwSetWindowUserPointer(window_, this);
     glfwSetFramebufferSizeCallback(window_, &ViewerApp::FramebufferSizeCallback);
     glfwSetWindowRefreshCallback(window_, &ViewerApp::WindowRefreshCallback);
@@ -1077,6 +1079,11 @@ void ViewerApp::RequestAnimationExport(AnimationExportParams params) {
     exportPending_ = true;
 }
 
+void ViewerApp::RequestOrbitCapture(OrbitCaptureParams params) {
+    pendingOrbit_ = std::move(params);
+    orbitCapturePending_ = true;
+}
+
 namespace {
 
 // Receives one captured frame: (zero-based frame index, RGBA8 pixels).
@@ -1576,6 +1583,168 @@ void ViewerApp::RunAnimationExport(const AnimationExportParams& p) {
     }
 }
 
+void ViewerApp::RunOrbitCapture(const OrbitCaptureParams& p) {
+    if (documents_.empty() || activeDoc_ < 0) {
+        std::fprintf(stderr, "[viewer] OrbitCapture: no model loaded\n");
+        return;
+    }
+    const i32 fps = std::clamp(p.fps, 1, 240);
+    const i32 frameCount = std::max<i32>(1, p.frames);
+    const i32 warmupFrames = static_cast<i32>(std::round(p.warmupSeconds * fps));
+    const std::string modelName = SanitizeName(currentModelPath_.stem().string());
+    const ExportFormatInfo& formatInfo = GetExportFormatInfo(p.format);
+    const bool singleFile = IsSingleFileFormat(p.format);
+    const bool transparent = p.transparentBackground;
+
+    std::error_code ec;
+    std::filesystem::create_directories(p.outputFolder, ec);
+    const i32 origW = service_.Pipeline().Width();
+    const i32 origH = service_.Pipeline().Height();
+    const bool customRes = (p.width > 0 && p.height > 0 && (p.width != origW || p.height != origH));
+    if (customRes)
+        service_.Pipeline().ResizePrimaryTarget(p.width, p.height);
+
+    // Force grid off for clean close-up (restored after)
+    DisplayFlags savedDf = service_.Settings().GetDisplayFlags();
+    DisplayFlags dfNoGrid = savedDf;
+    dfNoGrid.showGrid = false;
+    service_.Settings().SetDisplayFlags(dfNoGrid);
+
+    std::fprintf(stderr,
+                 "[viewer] OrbitCapture: warmup %.1fs (%d frames) + %d frames at %d FPS (%.1f deg/frame) -> %s\n",
+                 p.warmupSeconds, warmupFrames, frameCount, fps, p.degreesPerFrame,
+                 io::PathToUtf8(p.outputFolder).c_str());
+
+    // Warmup: let animation and camera settle (10s per user request)
+    const SceneId scene = ActiveSceneId();
+    auto& cam = service_.SceneAt(scene).Camera();
+    // Close-up full-body: pull in but keep full figure (user request) — head fully visible
+    {
+        cam.SetTarget({0.0f, 0.0f, 78.0f});
+        cam.SetDistance(320.0f);
+        cam.SetPitch(0.34f);
+        cam.SetYaw(cam.GetYaw());
+    }
+    LightingMode savedLm = service_.Settings().GetLightingMode();
+    const f32 stepRad = p.degreesPerFrame * 3.14159265f / 180.0f;
+    for (i32 i = 0; i < warmupFrames; ++i) {
+        glfwPollEvents();
+        const f32 dt = 1.0f / static_cast<f32>(fps);
+        service_.SceneAt(scene).Update(dt);
+        service_.Ticker().Tick(service_.SceneAt(scene), dt);
+        service_.SetActiveScene(scene);
+        UpdateCameraPresetAnimator();
+        // keep original orbit paused during warmup — just let particles settle
+    }
+
+    std::vector<whiteout::textures::Texture> animFrames;
+    whiteout::textures::png::Writer pngWriter;
+    i32 written = 0;
+    FrameSink sink;
+    if (singleFile) {
+        animFrames.reserve(static_cast<usize>(frameCount));
+        sink = [&](i32, whiteout::textures::Texture&& tex) {
+            animFrames.push_back(std::move(tex));
+            ++written;
+        };
+    } else {
+        sink = [&](i32 frameIndex, whiteout::textures::Texture&& tex) {
+            char idBuf[24];
+            std::snprintf(idBuf, sizeof(idBuf), "%04d", frameIndex);
+            std::filesystem::path file =
+                p.outputFolder / (modelName + "_orbit_" + idBuf + ".png");
+            pngWriter.write(io::PathToUtf8(file), tex);
+            if (pngWriter.hasIssues())
+                std::fprintf(stderr, "[viewer] OrbitCapture: PNG write failed for %s: %s\n",
+                             io::PathToUtf8(file).c_str(), pngWriter.getIssues().front().c_str());
+            else
+                ++written;
+        };
+    }
+
+    CaptureHooks hooks;
+    hooks.applyCamera = [this] { UpdateCameraPresetAnimator(); };
+    hooks.captureUi = p.captureUi;
+    if (p.captureUi)
+        hooks.buildFrame = [this] {
+            ImGui_ImplGlfw_NewFrame();
+            ImGui::NewFrame();
+            ui_->BuildFrame();
+            ImGui::Render();
+        };
+    else
+        hooks.buildFrame = [] {
+            ImGui_ImplGlfw_NewFrame();
+            ImGui::NewFrame();
+            ImGui::Render();
+        };
+
+    // Orbit stepping wrapper: each frame advance yaw by stepRad before render.
+    // Reuse CaptureSequenceFrames infra but inject orbit step via custom loop.
+    auto& pipeline = service_.Pipeline();
+    pipeline.EnableFrameCapture(true);
+    if (auto* cp = service_.SceneAt(scene).ActiveContentProvider())
+        cp->Pump();
+    const f32 dtSec = 1.0f / static_cast<f32>(fps);
+    const i32 ringSize = hooks.captureUi ? 1 : pipeline.FrameCaptureRingSize();
+    struct Pending { i32 frameIndex; i32 ringSlot; };
+    std::vector<Pending> pending;
+    pending.reserve(static_cast<usize>(ringSize));
+    auto drain = [&]() {
+        if (pending.empty()) return;
+        if (auto* dev = pipeline.Gfx()) dev->WaitIdle();
+        for (const Pending& pr : pending) {
+            std::vector<u8> rgba; i32 w=0,h=0;
+            if (!pipeline.DownloadCaptureSlot(pr.ringSlot, rgba, w, h) || w<=0 || h<=0) continue;
+            auto tex = whiteout::textures::Texture::create2D(whiteout::textures::PixelFormat::RGBA8, (u32)w,(u32)h,1);
+            auto dst = tex.mipData(0);
+            if (dst.size() < rgba.size()) continue;
+            std::memcpy(dst.data(), rgba.data(), rgba.size());
+            sink(pr.frameIndex, std::move(tex));
+        }
+        pending.clear();
+    };
+    for (i32 i = 0; i < frameCount; ++i) {
+        glfwPollEvents();
+        // Advance orbit smoothly (yaw)
+        {
+            float yaw = cam.GetYaw();
+            cam.SetYaw(yaw + stepRad);
+        }
+        const f32 stepDt = dtSec;
+        service_.SceneAt(scene).Update(stepDt);
+        service_.Ticker().Tick(service_.SceneAt(scene), stepDt);
+        service_.SetActiveScene(scene);
+        if (hooks.applyCamera) hooks.applyCamera();
+        if (hooks.buildFrame) hooks.buildFrame();
+        Viewport vp; vp.scene = scene; vp.target = targetId_; vp.camera = &cam;
+        pipeline.RenderViewport(vp);
+        pipeline.Present(targetId_);
+        const i32 slot = pipeline.LastCapturedSlot();
+        if (slot >= 0) pending.push_back({i, slot});
+        if ((i32)pending.size() >= ringSize) drain();
+    }
+    drain();
+    pipeline.EnableFrameCapture(false);
+
+    service_.Settings().SetDisplayFlags(savedDf);
+    service_.Settings().SetLightingMode(savedLm);
+    if (customRes)
+        service_.Pipeline().ResizePrimaryTarget(origW, origH);
+    if (written == 0) {
+        std::fprintf(stderr, "[viewer] OrbitCapture produced nothing\n");
+        return;
+    }
+    if (singleFile) {
+        WriteAnimated(p.format, animFrames,
+                      p.outputFolder / (modelName + "_orbit" + formatInfo.extension), fps,
+                      modelName + "_orbit", transparent);
+    } else {
+        std::fprintf(stderr, "[viewer] OrbitCapture: %d/%d frames -> %s\n", written, frameCount,
+                     io::PathToUtf8(p.outputFolder).c_str());
+    }
+}
+
 void ViewerApp::Tick(f32 dt) {
     // Publish the active document's scene BEFORE polling: GLFW input callbacks
     // fire inside glfwPollEvents and steer the active scene's camera, and every
@@ -1589,8 +1758,12 @@ void ViewerApp::Tick(f32 dt) {
     if (!window_ || glfwWindowShouldClose(window_))
         return;
 
-    // Run a queued animation export before anything else — it owns the frame
-    // (its own ImGui frame + render loop) and skips the normal tick.
+    // Run a queued animation/orbit export before anything else — it owns the frame
+    if (orbitCapturePending_) {
+        orbitCapturePending_ = false;
+        RunOrbitCapture(pendingOrbit_);
+        return;
+    }
     if (exportPending_) {
         exportPending_ = false;
         RunAnimationExport(pendingExport_);

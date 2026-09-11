@@ -721,6 +721,17 @@ void ViewerUI::BuildMenuBar() {
                 exportSeqIdx_ = focus ? focus->animation.ActiveSequenceIndex() : 0;
                 openExportPopup_ = true;
             }
+            if (ImGui::MenuItem("Orbit Capture (10s warmup)##orbit", nullptr, false, hasModel)) {
+                NFD::UniquePathU8 outPath;
+                if (NFD::PickFolder(outPath) == NFD_OKAY) {
+                    ViewerApp::OrbitCaptureParams p;
+                    p.frames = 120; // 360 deg at 3 deg/frame, ~4s at 30fps
+                    p.fps = 30;
+                    p.warmupSeconds = 10.0f;
+                    p.outputFolder = whiteout::flakes::io::FsPathFromUtf8(outPath.get());
+                    app_.RequestOrbitCapture(std::move(p));
+                }
+            }
             ImGui::Separator();
             if (ImGui::MenuItem(i18n::tr("menu.file.exit")))
                 glfwSetWindowShouldClose(app_.Window(), GLFW_TRUE);
@@ -771,6 +782,13 @@ void ViewerUI::BuildMenuBar() {
                     svc.Settings().SetSmaaEnabled(smaa);
                     if (smaa)
                         svc.Settings().SetFxaaEnabled(false);
+                    SaveIni(app_);
+                }
+            }
+            {
+                bool cas = svc.Settings().CasEnabled();
+                if (ImGui::MenuItem("CAS Sharpen", nullptr, &cas)) {
+                    svc.Settings().SetCasEnabled(cas);
                     SaveIni(app_);
                 }
             }
@@ -931,6 +949,100 @@ void ViewerUI::BuildToolbar() {
 
     RenderService& svc = app_.Service();
 
+    // ---- Real-time enhancement hotkeys (no restart, per-frame polled) ----
+    // All settings are atomics read by RenderViewport each frame, so toggling
+    // here takes effect on the next frame. Ini is saved so the choice persists.
+    if (!ImGui::IsAnyItemActive()) {
+        // F1: cycle PN Off/x2/x4/x8/Adaptive
+        if (ImGui::IsKeyPressed(ImGuiKey_F1, false)) {
+            int v = static_cast<int>(svc.Settings().GetPnMode());
+            v = (v + 1) % 5;
+            svc.Settings().SetPnMode(static_cast<RenderSettings::PnMode>(v));
+            SaveIni(app_);
+        }
+        // F2: cycle AF 1/2/4/8/16
+        if (ImGui::IsKeyPressed(ImGuiKey_F2, false)) {
+            static const u32 kVals[] = {1, 2, 4, 8, 16};
+            u32 cur = svc.Settings().GetAnisotropy();
+            int idx = 0;
+            for (int i = 0; i < 5; ++i) if (kVals[i] == cur) idx = i;
+            idx = (idx + 1) % 5;
+            svc.Settings().SetAnisotropy(kVals[idx]);
+            SaveIni(app_);
+        }
+        // F3: toggle CAS
+        if (ImGui::IsKeyPressed(ImGuiKey_F3, false)) {
+            bool on = !svc.Settings().CasEnabled();
+            svc.Settings().SetCasEnabled(on);
+            SaveIni(app_);
+        }
+        // F4: cycle AA Off -> FXAA -> SMAA -> Off
+        if (ImGui::IsKeyPressed(ImGuiKey_F4, false)) {
+            bool fxaa = svc.Settings().FxaaEnabled();
+            bool smaa = svc.Settings().SmaaEnabled();
+            int mode = smaa ? 2 : (fxaa ? 1 : 0);
+            mode = (mode + 1) % 3;
+            svc.Settings().SetFxaaEnabled(mode == 1);
+            svc.Settings().SetSmaaEnabled(mode == 2);
+            SaveIni(app_);
+        }
+        // F5: toggle Bloom
+        if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
+            bool on = !svc.Settings().BloomEnabled();
+            svc.Settings().SetBloomEnabled(on);
+            SaveIni(app_);
+        }
+        // F6: cycle MipBias -0.6 / -0.3 / 0.0
+        if (ImGui::IsKeyPressed(ImGuiKey_F6, false)) {
+            static const f32 kVals[] = {-0.6f, -0.3f, 0.0f};
+            f32 cur = svc.Settings().GetMipBias();
+            int idx = 1;
+            for (int i = 0; i < 3; ++i) if (std::abs(kVals[i] - cur) < 0.01f) idx = i;
+            idx = (idx + 1) % 3;
+            svc.Settings().SetMipBias(kVals[idx]);
+            SaveIni(app_);
+        }
+    }
+    // Hold Tab: temporary A/B — show original (AF off, CAS off, PN off, AA off)
+    // Release restores previous values. Uses static to remember pre-hold state.
+    {
+        static bool sTabHeld = false;
+        static int sSavedPn = 0;
+        static u32 sSavedAniso = 4;
+        static f32 sSavedBias = -0.3f;
+        static bool sSavedCas = false, sSavedFxaa = false, sSavedSmaa = false, sSavedBloom = false;
+        bool tabDown = ImGui::IsKeyDown(ImGuiKey_Tab) && !ImGui::IsAnyItemActive();
+        if (tabDown && !sTabHeld) {
+            sTabHeld = true;
+            sSavedPn = static_cast<int>(svc.Settings().GetPnMode());
+            sSavedAniso = svc.Settings().GetAnisotropy();
+            sSavedBias = svc.Settings().GetMipBias();
+            sSavedCas = svc.Settings().CasEnabled();
+            sSavedFxaa = svc.Settings().FxaaEnabled();
+            sSavedSmaa = svc.Settings().SmaaEnabled();
+            sSavedBloom = svc.Settings().BloomEnabled();
+            svc.Settings().SetPnMode(RenderSettings::PnMode::Off);
+            svc.Settings().SetAnisotropy(1);
+            svc.Settings().SetMipBias(0.0f);
+            svc.Settings().SetCasEnabled(false);
+            svc.Settings().SetFxaaEnabled(false);
+            svc.Settings().SetSmaaEnabled(false);
+        } else if (!tabDown && sTabHeld) {
+            sTabHeld = false;
+            svc.Settings().SetPnMode(static_cast<RenderSettings::PnMode>(sSavedPn));
+            svc.Settings().SetAnisotropy(sSavedAniso);
+            svc.Settings().SetMipBias(sSavedBias);
+            svc.Settings().SetCasEnabled(sSavedCas);
+            svc.Settings().SetFxaaEnabled(sSavedFxaa);
+            svc.Settings().SetSmaaEnabled(sSavedSmaa);
+            svc.Settings().SetBloomEnabled(sSavedBloom);
+        }
+        if (sTabHeld) {
+            ImGui::TextDisabled("[Tab] Original");
+            ImGui::SameLine();
+        }
+    }
+
     // ---- Playback pause/resume (Space) ----
     // The model lives in the active document's scene (each document owns one),
     // so pause THAT scene — not the default one.
@@ -1035,6 +1147,23 @@ void ViewerUI::BuildToolbar() {
         ImGui::SetNextItemWidth(120);
         if (ImGui::Combo("##pn", &sel, items, 5)) {
             svc.Settings().SetPnMode(static_cast<RenderSettings::PnMode>(sel));
+            SaveIni(app_);
+        }
+        ImGui::SameLine();
+    }
+
+    // ---- Anisotropy (low-poly texture sharpness) ----
+    {
+        u32 aniso = svc.Settings().GetAnisotropy();
+        int sel = 2; // 4x
+        const u32 vals[] = {1, 2, 4, 8, 16};
+        const char* items[] = {"AF Off", "AF 2x", "AF 4x", "AF 8x", "AF 16x"};
+        for (int i = 0; i < 5; ++i)
+            if (vals[i] == aniso)
+                sel = i;
+        ImGui::SetNextItemWidth(90);
+        if (ImGui::Combo("##af", &sel, items, 5)) {
+            svc.Settings().SetAnisotropy(vals[sel]);
             SaveIni(app_);
         }
         ImGui::SameLine();
@@ -1319,6 +1448,51 @@ void ViewerUI::BuildSettingsWindow() {
                                    "%.3f")) {
                 svc.Settings().SetAoBentBoost(boost);
                 SaveIni(app_);
+            }
+        }
+
+        // ---- Anisotropic filtering (material samplers) ----
+        {
+            static constexpr const char* kAnisoLabels[] = {"1x", "2x", "4x", "8x", "16x"};
+            static constexpr u32 kAnisoValues[] = {1, 2, 4, 8, 16};
+            u32 cur = svc.Settings().GetAnisotropy();
+            int idx = 2; // default 4x
+            for (int i = 0; i < 5; ++i)
+                if (kAnisoValues[i] == cur)
+                    idx = i;
+            ImGui::SetNextItemWidth(180.0f);
+            if (ImGui::Combo("Anisotropy", &idx, kAnisoLabels, 5)) {
+                svc.Settings().SetAnisotropy(kAnisoValues[idx]);
+                SaveIni(app_);
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Material texture filtering sharpness at grazing angles.\n4x=balanced, 16x=sharpest (low cost on RTX 5070 Ti).");
+            f32 bias = svc.Settings().GetMipBias();
+            ImGui::SetNextItemWidth(180.0f);
+            if (ImGui::SliderFloat("Mip Bias", &bias, -1.0f, 0.5f, "%.2f")) {
+                svc.Settings().SetMipBias(bias);
+                SaveIni(app_);
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Negative = sharper mips. -0.3 pairs with AF 4x. -0.6~ -1.0 for aggressive sharpness (may alias).");
+        }
+
+        // ---- CAS sharpening (HDR, before tonemap) ----
+        {
+            bool cas = svc.Settings().CasEnabled();
+            if (ImGui::Checkbox("CAS Sharpen", &cas)) {
+                svc.Settings().SetCasEnabled(cas);
+                SaveIni(app_);
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("AMD CAS contrast-adaptive sharpen. Pairs with AF + PN for low-poly clarity.\nRuns on HDR before tonemap.");
+            if (cas) {
+                f32 sharp = svc.Settings().CasSharpness();
+                ImGui::SetNextItemWidth(180.0f);
+                if (ImGui::SliderFloat("Sharpness", &sharp, 0.0f, 1.0f, "%.2f")) {
+                    svc.Settings().SetCasSharpness(sharp);
+                    SaveIni(app_);
+                }
             }
         }
 

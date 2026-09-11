@@ -256,6 +256,11 @@ set(SHADER_ENTRIES
     "smaa.slang|psSmaaEdge|fragment|kSmaaEdgePS"
     "smaa.slang|psSmaaWeights|fragment|kSmaaWeightsPS"
     "smaa.slang|psSmaaBlend|fragment|kSmaaBlendPS"
+    # CAS sharpening (AMD FidelityFX CAS) — single fullscreen pass on
+    # hdrColor after AA, before tonemap. Same fullscreen-triangle VS as
+    # blur/fxaa, linear HDR input.
+    "cas.slang|vsCas|vertex|kCasVS"
+    "cas.slang|psCas|fragment|kCasPS"
     # NOTE: depth of field has no custom shader entry — DofService runs the
     # shipped WC3 depthoffield.bls (GxShaderID DepthOfField) through the BLS
     # shader cache, and reuses the embedded blit (kBlit*) for the round-trip.

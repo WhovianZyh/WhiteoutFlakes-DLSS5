@@ -24,7 +24,9 @@ void SamplerAssetManager::ReleaseGpu() {
 }
 
 gfx::SamplerHandle SamplerAssetManager::Get(const gfx::SamplerDesc& desc) {
-    const DescKey key{desc.minFilter, desc.magFilter, desc.addressU, desc.addressV, desc.addressW};
+    const i32 biasQ = static_cast<i32>(std::round(desc.mipLodBias * 100.0f));
+    const DescKey key{desc.minFilter, desc.magFilter, desc.addressU, desc.addressV,
+                      desc.addressW, desc.maxAnisotropy, biasQ, desc.comparison};
     if (auto it = cache_.find(key); it != cache_.end())
         return it->second;
     gfx::SamplerHandle h = gfx_.CreateSampler(desc);
@@ -41,6 +43,8 @@ gfx::SamplerHandle SamplerAssetManager::WrapVariant(u32 wrapFlags) {
     sd.addressU = (bits & 0x1) ? AM::Wrap : AM::Clamp;
     sd.addressV = (bits & 0x2) ? AM::Wrap : AM::Clamp;
     sd.addressW = AM::Clamp;
+    sd.maxAnisotropy = anisotropy_;
+    sd.mipLodBias = mipBias_;
     return Get(sd);
 }
 
@@ -52,6 +56,8 @@ gfx::SamplerHandle SamplerAssetManager::LinearWrap() {
     sd.addressU = AM::Wrap;
     sd.addressV = AM::Wrap;
     sd.addressW = AM::Wrap;
+    sd.maxAnisotropy = anisotropy_;
+    sd.mipLodBias = mipBias_;
     return Get(sd);
 }
 

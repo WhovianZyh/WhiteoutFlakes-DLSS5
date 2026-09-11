@@ -399,6 +399,11 @@ void LoadSettingsIni(RenderService& service, bool& loopNonLoopingPolicy, bool& f
         loadFlag("ShowEvents", df.showEvents);
         loadFlag("ShowCollisions", df.showCollisions);
         loadFlag("ShowLights", df.showLights);
+        // Force grid off for close-up detail inspection (user request)
+        if (df.showGrid) {
+            df.showGrid = false;
+            dirty = true;
+        }
         if (dirty)
             service.Settings().SetDisplayFlags(df);
     }
@@ -567,6 +572,26 @@ void LoadSettingsIni(RenderService& service, bool& loopNonLoopingPolicy, bool& f
         if (ParseInt(*s, v) && v >= 0 && v <= 1000)
             service.Settings().SetMaxFps(v);
     }
+    if (auto* s = ini.Get(KeyOf("Anisotropy"))) {
+        i32 v = 4;
+        if (ParseInt(*s, v) && (v == 1 || v == 2 || v == 4 || v == 8 || v == 16))
+            service.Settings().SetAnisotropy(static_cast<u32>(v));
+    }
+    if (auto* s = ini.Get(KeyOf("MipBias"))) {
+        f32 v = -0.3f;
+        if (ParseFloat(*s, v))
+            service.Settings().SetMipBias(v);
+    }
+    if (auto* s = ini.Get(KeyOf("CasEnabled"))) {
+        bool v = false;
+        if (ParseBool(*s, v))
+            service.Settings().SetCasEnabled(v);
+    }
+    if (auto* s = ini.Get(KeyOf("CasSharpness"))) {
+        f32 v = 0.4f;
+        if (ParseFloat(*s, v))
+            service.Settings().SetCasSharpness(v);
+    }
     if (auto* dnc = service.GetDncService()) {
         if (auto* s = ini.Get(KeyOf("TimeOfDay"))) {
             f32 v = 0;
@@ -677,6 +702,10 @@ void SaveSettingsIni(const RenderService& service, bool loopNonLoopingPolicy, bo
     ini.Set(KeyOf("VelocityFlipY"), service.Settings().VelocityFlipY() ? "1" : "0");
     ini.Set(KeyOf("NeuralRenderingEnabled"), service.Settings().NeuralRenderingEnabled() ? "1" : "0");
     ini.Set(KeyOf("MaxFps"), ToString(service.Settings().GetMaxFps()));
+    ini.Set(KeyOf("Anisotropy"), ToString(static_cast<i32>(service.Settings().GetAnisotropy())));
+    ini.Set(KeyOf("MipBias"), FloatToString(service.Settings().GetMipBias()));
+    ini.Set(KeyOf("CasEnabled"), service.Settings().CasEnabled() ? "1" : "0");
+    ini.Set(KeyOf("CasSharpness"), FloatToString(service.Settings().CasSharpness()));
     if (const auto* dnc = service.GetDncService()) {
         ini.Set(KeyOf("TimeOfDay"), FloatToString(dnc->GetTimeOfDay()));
         ini.Set(KeyOf("AnimateTod"), dnc->GetTodScale() > 0.0f ? "1" : "0");

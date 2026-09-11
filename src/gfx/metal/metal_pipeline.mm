@@ -674,7 +674,7 @@ SamplerHandle MetalDevice::CreateSampler(const SamplerDesc& desc) {
         sd.sAddressMode = ToMtlAddress(desc.addressU);
         sd.tAddressMode = ToMtlAddress(desc.addressV);
         sd.rAddressMode = ToMtlAddress(desc.addressW);
-        sd.maxAnisotropy = 1;
+        sd.maxAnisotropy = desc.comparison ? 1 : std::clamp<u32>(desc.maxAnisotropy, 1, 16);
         sd.lodMinClamp = 0.0f;
         sd.lodMaxClamp = FLT_MAX;
         if (desc.comparison)

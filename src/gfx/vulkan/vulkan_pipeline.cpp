@@ -297,6 +297,10 @@ PipelineHandle VulkanDevice::CreateComputePipeline(const ComputePipelineDesc& de
 
 SamplerHandle VulkanDevice::CreateSampler(const SamplerDesc& desc) {
     auto& state = *state_;
+    const u32 aniso = desc.comparison ? 1 : std::clamp(desc.maxAnisotropy, 1u, 16u);
+    const auto feats = state.physicalDevice.getFeatures();
+    const auto props = state.physicalDevice.getProperties();
+    const bool useAniso = aniso > 1 && feats.samplerAnisotropy;
     auto sR = state.device.createSampler({
         .magFilter = ToVkFilter(desc.magFilter),
         .minFilter = ToVkFilter(desc.minFilter),
@@ -305,6 +309,9 @@ SamplerHandle VulkanDevice::CreateSampler(const SamplerDesc& desc) {
         .addressModeU = ToVkAddressMode(desc.addressU),
         .addressModeV = ToVkAddressMode(desc.addressV),
         .addressModeW = ToVkAddressMode(desc.addressW),
+        .mipLodBias = std::clamp(desc.mipLodBias, -1.0f, 0.5f),
+        .anisotropyEnable = useAniso ? vk::True : vk::False,
+        .maxAnisotropy = useAniso ? std::min(float(aniso), props.limits.maxSamplerAnisotropy) : 1.0f,
         .compareEnable = desc.comparison ? vk::True : vk::False,
         .compareOp = ToVkCompareOp(desc.comparisonFunc),
         .maxLod = VK_LOD_CLAMP_NONE,

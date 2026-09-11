@@ -92,6 +92,10 @@ void PostProcessService::Init(gfx::IGFXDevice& gfx, gfx::GfxApi api,
     usize smaaWeightsN = sizeof(kSmaaWeightsPS);
     const u8* smaaBlendPs = kSmaaBlendPS;
     usize smaaBlendN = sizeof(kSmaaBlendPS);
+    const u8* casVs = kCasVS;
+    usize casVsN = sizeof(kCasVS);
+    const u8* casPs = kCasPS;
+    usize casPsN = sizeof(kCasPS);
     if (api == gfx::GfxApi::Vulkan) {
         blurVs = kGaussianBlurVSSpv;
         blurVsN = sizeof(kGaussianBlurVSSpv);
@@ -109,6 +113,10 @@ void PostProcessService::Init(gfx::IGFXDevice& gfx, gfx::GfxApi api,
         smaaWeightsN = sizeof(kSmaaWeightsPSSpv);
         smaaBlendPs = kSmaaBlendPSSpv;
         smaaBlendN = sizeof(kSmaaBlendPSSpv);
+        casVs = kCasVSSpv;
+        casVsN = sizeof(kCasVSSpv);
+        casPs = kCasPSSpv;
+        casPsN = sizeof(kCasPSSpv);
     } else if (api == gfx::GfxApi::WebGPU) {
         blurVs = kGaussianBlurVSWgsl;
         blurVsN = sizeof(kGaussianBlurVSWgsl);
@@ -126,6 +134,10 @@ void PostProcessService::Init(gfx::IGFXDevice& gfx, gfx::GfxApi api,
         smaaWeightsN = sizeof(kSmaaWeightsPSWgsl);
         smaaBlendPs = kSmaaBlendPSWgsl;
         smaaBlendN = sizeof(kSmaaBlendPSWgsl);
+        casVs = kCasVSWgsl;
+        casVsN = sizeof(kCasVSWgsl);
+        casPs = kCasPSWgsl;
+        casPsN = sizeof(kCasPSWgsl);
     } else if (api == gfx::GfxApi::Metal) {
         blurVs = kGaussianBlurVSMtl;
         blurVsN = sizeof(kGaussianBlurVSMtl);
@@ -143,6 +155,10 @@ void PostProcessService::Init(gfx::IGFXDevice& gfx, gfx::GfxApi api,
         smaaWeightsN = sizeof(kSmaaWeightsPSMtl);
         smaaBlendPs = kSmaaBlendPSMtl;
         smaaBlendN = sizeof(kSmaaBlendPSMtl);
+        casVs = kCasVSMtl;
+        casVsN = sizeof(kCasVSMtl);
+        casPs = kCasPSMtl;
+        casPsN = sizeof(kCasPSMtl);
     }
     if (blurVsN > 1 && blurPsN > 1) {
         blurVs_ = gfx_->CreateShader(gfx::ShaderStage::Vertex, blurVs, blurVsN);
@@ -162,6 +178,16 @@ void PostProcessService::Init(gfx::IGFXDevice& gfx, gfx::GfxApi api,
         smaaWeightsPs_ = gfx_->CreateShader(gfx::ShaderStage::Pixel, smaaWeightsPs, smaaWeightsN);
     if (smaaBlendN > 1)
         smaaBlendPs_ = gfx_->CreateShader(gfx::ShaderStage::Pixel, smaaBlendPs, smaaBlendN);
+    gfx::ShaderHandle casVsH = gfx::ShaderHandle::Invalid;
+    gfx::ShaderHandle casPsH = gfx::ShaderHandle::Invalid;
+    if (casVsN > 1)
+        casVsH = gfx_->CreateShader(gfx::ShaderStage::Vertex, casVs, casVsN);
+    if (casPsN > 1)
+        casPsH = gfx_->CreateShader(gfx::ShaderStage::Pixel, casPs, casPsN);
+    // CAS reuses the same embedded pipeline path as FXAA — share blurVs_ slot if needed
+    // but keep dedicated handles for clarity. If CAS VS fails, fall back to blurVs_.
+    casVs_ = (casVsH != gfx::ShaderHandle::Invalid) ? casVsH : blurVs_;
+    casPs_ = casPsH;
 
     extractCb_ = gfx_->CreateBuffer({
         .size = sizeof(BloomExtractCb),
@@ -181,6 +207,10 @@ void PostProcessService::Init(gfx::IGFXDevice& gfx, gfx::GfxApi api,
     });
     smaaCb_ = gfx_->CreateBuffer({
         .size = 16, // float4 rtMetrics
+        .usage = gfx::BufferUsage::Constant | gfx::BufferUsage::CpuWritable,
+    });
+    casCb_ = gfx_->CreateBuffer({
+        .size = 32, // float4 rcpFrame + float sharpness + pad
         .usage = gfx::BufferUsage::Constant | gfx::BufferUsage::CpuWritable,
     });
 
@@ -275,6 +305,10 @@ void PostProcessService::Shutdown() {
         gfx_->Destroy(smaaWeightsPs_);
     if (smaaBlendPs_ != gfx::ShaderHandle::Invalid)
         gfx_->Destroy(smaaBlendPs_);
+    if (casPs_ != gfx::ShaderHandle::Invalid && casPs_ != blurVs_)
+        gfx_->Destroy(casPs_);
+    if (casVs_ != gfx::ShaderHandle::Invalid && casVs_ != blurVs_)
+        gfx_->Destroy(casVs_);
     if (extractCb_ != gfx::BufferHandle::Invalid)
         gfx_->Destroy(extractCb_);
     if (combineCb_ != gfx::BufferHandle::Invalid)
@@ -283,6 +317,8 @@ void PostProcessService::Shutdown() {
         gfx_->Destroy(blurCb_);
     if (fxaaCb_ != gfx::BufferHandle::Invalid)
         gfx_->Destroy(fxaaCb_);
+    if (casCb_ != gfx::BufferHandle::Invalid)
+        gfx_->Destroy(casCb_);
     if (smaaCb_ != gfx::BufferHandle::Invalid)
         gfx_->Destroy(smaaCb_);
     if (smaaEdges_ != gfx::TextureHandle::Invalid)
@@ -298,12 +334,13 @@ void PostProcessService::Shutdown() {
     if (pointSampler_ != gfx::SamplerHandle::Invalid)
         gfx_->Destroy(pointSampler_);
 
-    extractPso_ = blurPso_ = combinePso_ = blitPso_ = fxaaPso_ =
+    extractPso_ = blurPso_ = combinePso_ = blitPso_ = fxaaPso_ = casPso_ =
         gfx::PipelineHandle::Invalid;
     smaaEdgePso_ = smaaWeightsPso_ = smaaBlendPso_ = gfx::PipelineHandle::Invalid;
     blurVs_ = blurPs_ = blitVs_ = blitPs_ = fxaaPs_ = gfx::ShaderHandle::Invalid;
+    casVs_ = casPs_ = gfx::ShaderHandle::Invalid;
     smaaEdgePs_ = smaaWeightsPs_ = smaaBlendPs_ = gfx::ShaderHandle::Invalid;
-    extractCb_ = combineCb_ = blurCb_ = fxaaCb_ = smaaCb_ = spriteVb_ =
+    extractCb_ = combineCb_ = blurCb_ = fxaaCb_ = casCb_ = smaaCb_ = spriteVb_ =
         gfx::BufferHandle::Invalid;
     smaaEdges_ = smaaBlend_ = areaTex_ = searchTex_ = gfx::TextureHandle::Invalid;
     smaaTargetsW_ = smaaTargetsH_ = 0;
@@ -315,15 +352,22 @@ void PostProcessService::Shutdown() {
 }
 
 void PostProcessService::EnsurePsos(gfx::Format hdrFmt) {
+    // FXAA/SMAA/CAS are optional (shader may be stub); only require bloom+blit
     if (extractPso_ != gfx::PipelineHandle::Invalid &&
         blurPso_ != gfx::PipelineHandle::Invalid &&
         combinePso_ != gfx::PipelineHandle::Invalid &&
-        blitPso_ != gfx::PipelineHandle::Invalid &&
-        fxaaPso_ != gfx::PipelineHandle::Invalid &&
-        smaaEdgePso_ != gfx::PipelineHandle::Invalid &&
-        smaaWeightsPso_ != gfx::PipelineHandle::Invalid &&
-        smaaBlendPso_ != gfx::PipelineHandle::Invalid && psoHdrFmt_ == hdrFmt)
-        return;
+        blitPso_ != gfx::PipelineHandle::Invalid && psoHdrFmt_ == hdrFmt) {
+        // Optional PSOs: if shader exists but PSO still invalid, force rebuild
+        bool needRebuild = false;
+        if (fxaaPs_ != gfx::ShaderHandle::Invalid && fxaaPso_ == gfx::PipelineHandle::Invalid)
+            needRebuild = true;
+        if (casPs_ != gfx::ShaderHandle::Invalid && casPso_ == gfx::PipelineHandle::Invalid)
+            needRebuild = true;
+        if (smaaEdgePs_ != gfx::ShaderHandle::Invalid && smaaEdgePso_ == gfx::PipelineHandle::Invalid)
+            needRebuild = true;
+        if (!needRebuild)
+            return;
+    }
 
     if (extractPso_ != gfx::PipelineHandle::Invalid)
         gfx_->Destroy(extractPso_);
@@ -335,6 +379,8 @@ void PostProcessService::EnsurePsos(gfx::Format hdrFmt) {
         gfx_->Destroy(blitPso_);
     if (fxaaPso_ != gfx::PipelineHandle::Invalid)
         gfx_->Destroy(fxaaPso_);
+    if (casPso_ != gfx::PipelineHandle::Invalid)
+        gfx_->Destroy(casPso_);
     if (smaaEdgePso_ != gfx::PipelineHandle::Invalid)
         gfx_->Destroy(smaaEdgePso_);
     if (smaaWeightsPso_ != gfx::PipelineHandle::Invalid)
@@ -390,6 +436,8 @@ void PostProcessService::EnsurePsos(gfx::Format hdrFmt) {
     // PSO simply doesn't exist when the fxaa bytecode stub was embedded.
     if (fxaaPs_ != gfx::ShaderHandle::Invalid)
         fxaaPso_ = build(blurVs_, fxaaPs_, nullptr, 0);
+    if (casPs_ != gfx::ShaderHandle::Invalid)
+        casPso_ = build(casVs_ != gfx::ShaderHandle::Invalid ? casVs_ : blurVs_, casPs_, nullptr, 0);
     // SMAA's three passes: edge/weights land on RGBA8 LDR scratch, the
     // neighborhood blend lands back on the HDR format.
     auto buildSmaa = [&](gfx::ShaderHandle ps, gfx::Format rtFmt) {
@@ -726,6 +774,38 @@ void PostProcessService::RunSmaa(gfx::IGFXCommandList* cmd, const RenderTarget& 
 
     // --- Pass 4: Blit ---------------------------------------------------------
     //   bloomScratchA → hdrColor — tonemap downstream reads its usual source.
+    RunBlit(cmd, target.bloomScratchA, target.hdrColor, target.width, target.height);
+}
+
+void PostProcessService::RunCas(gfx::IGFXCommandList* cmd, const RenderTarget& target, f32 sharpness) {
+    EnsurePsos(/*hdrFmt=*/gfx::Format::R11G11B10_FLOAT);
+    if (!cmd || casPso_ == gfx::PipelineHandle::Invalid ||
+        target.hdrColor == gfx::TextureHandle::Invalid ||
+        target.bloomScratchA == gfx::TextureHandle::Invalid)
+        return;
+    if (sharpness <= 0.001f)
+        return;
+    sharpness = std::clamp(sharpness, 0.0f, 1.0f);
+    const f32 w = static_cast<f32>(target.width);
+    const f32 h = static_cast<f32>(target.height);
+    if (void* mapped = gfx_->MapBuffer(casCb_)) {
+        // float4 rcpFrame + float sharpness + 3 pad = 32 bytes
+        f32 cb[8] = {(target.width > 0) ? 1.0f / w : 0.0f,
+                     (target.height > 0) ? 1.0f / h : 0.0f, 0.0f, 0.0f, sharpness, 0.0f, 0.0f, 0.0f};
+        std::memcpy(mapped, cb, sizeof(cb));
+        gfx_->UnmapBuffer(casCb_);
+    }
+    const f32 clearAttach[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    {
+        cmd->BeginRenderPass(target.bloomScratchA, gfx::TextureHandle::Invalid, clearAttach, 1.0f, 0);
+        cmd->SetViewport({0, 0, w, h, 0, 1});
+        cmd->BindPipeline(casPso_);
+        cmd->BindConstantBuffer(gfx::ShaderStage::Pixel, 0, casCb_);
+        cmd->BindShaderResource(gfx::ShaderStage::Pixel, 0, target.hdrColor);
+        cmd->BindSampler(gfx::ShaderStage::Pixel, 0, linearSampler_);
+        cmd->Draw(3, 0);
+        cmd->EndRenderPass();
+    }
     RunBlit(cmd, target.bloomScratchA, target.hdrColor, target.width, target.height);
 }
 

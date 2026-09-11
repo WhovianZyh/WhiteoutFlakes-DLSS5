@@ -167,6 +167,23 @@ public:
     // render loop on the next tick (outside ImGui frame building).
     void RequestAnimationExport(AnimationExportParams params);
 
+    // Orbit auto-capture: wait warmupSeconds after request, then orbit the
+    // camera (or model) and capture frames. Shares the FrameCapture ring with
+    // animation export. Use for low-poly A/B verification.
+    struct OrbitCaptureParams {
+        i32 frames = 120; // 360 deg at 3 deg/frame
+        i32 fps = 30;
+        ExportFormat format = ExportFormat::PngFrames;
+        bool transparentBackground = false;
+        bool captureUi = false;
+        i32 width = 0;
+        i32 height = 0;
+        std::filesystem::path outputFolder;
+        float warmupSeconds = 10.0f;
+        float degreesPerFrame = 3.0f; // orbit step
+    };
+    void RequestOrbitCapture(OrbitCaptureParams params);
+
     // ---- Host policy (toggled by the UI, read by the per-frame tick) ----
     bool LoopNonLoopingPolicy() const {
         return loopNonLoopingPolicy_;
@@ -234,6 +251,7 @@ private:
     // through the sequence one frame at a time, captures each composited
     // frame, and writes it as PNG frames or a GIF.
     void RunAnimationExport(const AnimationExportParams& params);
+    void RunOrbitCapture(const OrbitCaptureParams& params);
 
     void OnFramebufferResize(i32 w, i32 h);
 
@@ -419,6 +437,8 @@ private:
     // by the next Tick().
     bool exportPending_ = false;
     AnimationExportParams pendingExport_;
+    bool orbitCapturePending_ = false;
+    OrbitCaptureParams pendingOrbit_;
 
     friend class ViewerUI;
 };

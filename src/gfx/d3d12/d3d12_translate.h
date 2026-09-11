@@ -206,7 +206,9 @@ inline D3D12_BLEND_OP ToD3D12(BlendOp op) {
     }
 }
 
-inline D3D12_FILTER ToD3D12Filter(Filter minF, Filter magF) {
+inline D3D12_FILTER ToD3D12Filter(Filter minF, Filter magF, u32 maxAnisotropy = 1) {
+    if (maxAnisotropy > 1)
+        return D3D12_FILTER_ANISOTROPIC;
     if (minF == Filter::Point && magF == Filter::Point)
         return D3D12_FILTER_MIN_MAG_MIP_POINT;
     if (minF == Filter::Linear && magF == Filter::Linear)
@@ -217,7 +219,9 @@ inline D3D12_FILTER ToD3D12Filter(Filter minF, Filter magF) {
     return D3D12_FILTER_MIN_LINEAR_MAG_MIP_POINT;
 }
 
-inline D3D12_FILTER ToD3D12FilterComparison(Filter minF, Filter magF) {
+inline D3D12_FILTER ToD3D12FilterComparison(Filter minF, Filter magF, u32 maxAnisotropy = 1) {
+    if (maxAnisotropy > 1)
+        return D3D12_FILTER_COMPARISON_ANISOTROPIC;
     if (minF == Filter::Point && magF == Filter::Point)
         return D3D12_FILTER_COMPARISON_MIN_MAG_MIP_POINT;
     if (minF == Filter::Linear && magF == Filter::Linear)

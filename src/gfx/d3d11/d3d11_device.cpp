@@ -592,13 +592,15 @@ void D3D11Device::Destroy(PipelineHandle h) {
 }
 
 SamplerHandle D3D11Device::CreateSampler(const SamplerDesc& desc) {
+    const u32 aniso = desc.comparison ? 1 : std::clamp(desc.maxAnisotropy, 1u, 16u);
     D3D11_SAMPLER_DESC sd{};
-    sd.Filter = desc.comparison ? ToD3D11FilterComparison(desc.minFilter, desc.magFilter)
-                                : ToD3D11Filter(desc.minFilter, desc.magFilter);
+    sd.Filter = desc.comparison ? ToD3D11FilterComparison(desc.minFilter, desc.magFilter, aniso)
+                                : ToD3D11Filter(desc.minFilter, desc.magFilter, aniso);
     sd.AddressU = ToD3D11(desc.addressU);
     sd.AddressV = ToD3D11(desc.addressV);
     sd.AddressW = ToD3D11(desc.addressW);
-    sd.MaxAnisotropy = 1;
+    sd.MaxAnisotropy = aniso;
+    sd.MipLODBias = std::clamp(desc.mipLodBias, -1.0f, 0.5f);
     sd.ComparisonFunc = desc.comparison ? ToD3D11(desc.comparisonFunc) : D3D11_COMPARISON_NEVER;
     sd.MaxLOD = D3D11_FLOAT32_MAX;
     if (desc.comparison) {

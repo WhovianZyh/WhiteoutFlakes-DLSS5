@@ -126,6 +126,10 @@ struct SamplerDesc {
 
     bool comparison = false;
     CompareOp comparisonFunc = CompareOp::LessEqual;
+    // 1 = disabled, 2/4/8/16 = anisotropic. Clamped per-backend.
+    u32 maxAnisotropy = 1;
+    // Negative bias sharpens mip selection (e.g. -0.5). Clamped [-1,0.5] per backend.
+    f32 mipLodBias = 0.0f;
 };
 
 enum class ShaderHandle : u64;
